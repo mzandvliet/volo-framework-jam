@@ -7,24 +7,24 @@ public class Character : MonoBehaviour {
     [SerializeField] private float _turnSpeed = 45f;
 
     CharacterInput _input;
-    private StateMachine _machine;
+    //private StateMachine _machine;
 
-    private void Start() {
-        var machineConfig = new StateMachineConfig();
-        machineConfig.AddState(States.Alive, typeof(Alive))
-            .Permit(States.Dead);
-        machineConfig.AddState(States.Dead, typeof(Dead));
-        machineConfig.Build(this);
-    }
-	void Update () {
+    //private void Start() {
+    //    var machineConfig = new StateMachineConfig();
+    //    machineConfig.AddState(States.Alive, typeof(Alive))
+    //        .Permit(States.Dead);
+    //    machineConfig.AddState(States.Dead, typeof(Dead));
+    //    machineConfig.Build(this);
+    //}
+    void Update() {
         transform.Translate(new Vector3(_input.Walk.x, _input.Walk.y, 0f) * Time.deltaTime * _walkSpeed, Space.World);
-	    float angleToTarget = AngleSigned(transform.up, _input.Look);
+        float angleToTarget = AngleSigned(transform.up, _input.Look);
         transform.Rotate(0f, 0f, angleToTarget * Time.deltaTime * _turnSpeed, Space.World);
 
-	    if (_input.Shoot) {
-	        Instantiate(_projectilePrefab, transform.position + transform.up, transform.rotation);
-	    }
-	}
+        if (_input.Shoot) {
+            Instantiate(_projectilePrefab, transform.position + transform.up, transform.rotation);
+        }
+    }
 
     private static float AngleSigned(Vector2 a, Vector2 b) {
         return Mathf.Atan2(b.y, b.x) - Mathf.Atan2(a.y, a.x);
@@ -36,38 +36,38 @@ public class Character : MonoBehaviour {
         _input = input;
     }
 
-    public static class States {
-        public static readonly StateId Alive = new StateId("Alive");
-        public static readonly StateId Dead = new StateId("Dead");
-    }
+    //public static class States {
+    //    public static readonly StateId Alive = new StateId("Alive");
+    //    public static readonly StateId Dead = new StateId("Dead");
+    //}
 
-    private class Alive : IState {
-        public void OnEnter(StateMachine machine, object data) {
+    //private class Alive : IState {
+    //    public void OnEnter(StateMachine machine, object data) {
             
-        }
+    //    }
 
-        /* Todo: we want to do all the things a monobehaviour can do here
-         * 
-         * Update
-         * OnCollision
-         * Etc.
-         */
+    //    /* Todo: we want to do all the things a monobehaviour can do here
+    //     * 
+    //     * Update
+    //     * OnCollision
+    //     * Etc.
+    //     */
 
 
-        public void OnExit() {
+    //    public void OnExit() {
 
-        }
-    }
+    //    }
+    //}
 
-    private class Dead : IState {
-        public void OnEnter(StateMachine machine, object data) {
+    //private class Dead : IState {
+    //    public void OnEnter(StateMachine machine, object data) {
 
-        }
+    //    }
 
-        public void OnExit() {
+    //    public void OnExit() {
 
-        }
-    }
+    //    }
+    //}
 }
 
 public struct CharacterInput {

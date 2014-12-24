@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Reflection;
 
 /*
  * ----------- Architecture issues: --------
@@ -64,7 +66,9 @@ namespace RamjetAnvil.Unity.Utils {
    * }         
    * 
    */
-    
+
+    public class StateMethodAttribute : Attribute { }
+
     public class StateMachineConfig {
 
         private readonly IDictionary<StateId, StateConfig> _states;
@@ -100,15 +104,15 @@ namespace RamjetAnvil.Unity.Utils {
 
     public static class StateMachineConfigExtensions {
 
-        public static StateMachine Build(this StateMachineConfig config, object initialStateData) {
+        public static StateMachine<T> Build<T>(this StateMachineConfig config, object initialStateData) {
             if (config.InitialState == null) {
                 throw new Exception("No initial state configured, cannot instantiate state machine");
             }
-            return new StateMachine(config, initialStateData);
+            return new StateMachine<T>(config, initialStateData);
         }
     }
 
-    public class StateMachine {
+    public class StateMachine<T> {
         private readonly StateMachineConfig _config;
         private readonly IteratableStack<StateInstance> _stack;
 
@@ -116,10 +120,57 @@ namespace RamjetAnvil.Unity.Utils {
             _config = config;
             _stack = new IteratableStack<StateInstance>();
 
+            var ownerEvents = FindOwnerEvents(typeof (T), null);
+            FindStateMethods();
+
             var initialStateConfig = _config.States[_config.InitialState.Value];
             var state = CreateState(initialStateConfig.StateType);
-            _stack.Push(new StateInstance(initialStateConfig, state));
-            state.OnEnter(this, initialStateData);
+            _stack.Push(new StateInstance(initialStateConfig, state, null));
+            state.OnEnter(initialStateData);
+        }
+
+        private IList<MethodInfo> FindStateMethods() {
+            var type = typeof (T);
+            var methods = type.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic);
+            var stateMethods = new List<MethodInfo>();
+            foreach (var m in methods) {
+                var attributes = m.GetCustomAttributes(typeof (StateMethodAttribute), false);
+                if (attributes.Length > 0) {
+                    UnityEngine.Debug.Log("Found method: " + m.Name);
+                    stateMethods.Add(m);
+                }
+            }
+            return stateMethods;
+        }
+
+        private void FindMethodsInStates(IList<MethodInfo> methodInfo) {
+            foreach (var pair in _config.States) {
+                var stateType = pair.Value.StateType;
+                var methods = stateType.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic);
+                foreach (var m in methods) {
+                    foreach (var method in methodInfo) {
+                        if (m.Name == method.Name) {
+                            UnityEngine.Debug.Log("Found match: " + m.Name + " -> " + method.Name);
+                        }
+                    }
+                }
+            }
+        }
+
+        private IDictionary<string, EventInfo> FindOwnerEvents(Type ownerType, IEnumerable<MethodInfo> methods) {
+            var stateEvents = new Dictionary<string, EventInfo>();
+            
+            var events = ownerType.GetEvents(BindingFlags.Instance | BindingFlags.NonPublic);
+            foreach (var e in events) {
+                foreach (var m in methods) {
+                    // todo: signature checks
+                    if (e.Name.Equals("On" + m.Name)) {
+                        stateEvents.Add(m.Name, e);
+                    }
+                }
+            }
+
+            return stateEvents;
         }
 
         public void Transition(StateId stateId, object data) {
@@ -135,13 +186,13 @@ namespace RamjetAnvil.Unity.Utils {
 
                 var newStateInstance = CreateState(newStateConfig.StateType);
                 _stack.Push(new StateInstance(newStateConfig, newStateInstance));
-                newStateInstance.OnEnter(this, data);
+                newStateInstance.OnEnter(data);
             } else if (isChildTransition) {
                 var newStateConfig = _config.States[stateId];
 
                 var newStateInstance = CreateState(newStateConfig.StateType);
                 _stack.Push(new StateInstance(newStateConfig, newStateInstance));
-                newStateInstance.OnEnter(this, data);
+                newStateInstance.OnEnter(data);
             }
             else {
                 throw new Exception(string.Format("Transition to state '{0}' is not registered, transition failed", stateId));
@@ -229,10 +280,12 @@ namespace RamjetAnvil.Unity.Utils {
     public class StateInstance { // in stack
         private readonly StateConfig _config;
         private readonly IState _state;
+        private readonly IDictionary<string, MethodInfo> _stateMethods;
 
-        public StateInstance(StateConfig config, IState state) {
+        public StateInstance(StateConfig config, IState state, IDictionary<string, MethodInfo> stateMethods) {
             _config = config;
             _state = state;
+            _stateMethods = stateMethods;
         }
 
         public StateConfig Config {
@@ -242,10 +295,14 @@ namespace RamjetAnvil.Unity.Utils {
         public IState State {
             get { return _state; }
         }
+
+        public IDictionary<string, MethodInfo> StateMethods {
+            get { return _stateMethods; }
+        }
     }
 
     public interface IState {
-        void OnEnter(StateMachine machine, object data); // object might not be handiest type for passing multiple arguments
+        void OnEnter(object data); // object might not be handiest type for passing multiple arguments
         void OnExit();
     }
 
