@@ -10,6 +10,8 @@ using System.Reflection;
  * The owner's events should really just be references to delegates, I think. No need for multicast.
  * 
  * Support Coroutines?
+ * 
+ * Special handling for parent->child and child-parent relationships?
  */
 namespace RamjetAnvil.Unity.Utils {
 
@@ -68,8 +70,6 @@ namespace RamjetAnvil.Unity.Utils {
         public void Transition(StateId stateId, IDictionary<string, object> data) {
             var oldState = _stack.Peek();
 
-            // Todo: better handling of parent-to-child transition. It's not onexit, but things do change for the parent
-
             var isNormalTransition = oldState.Transitions.Contains(stateId);
             var isChildTransition = oldState.ChildTransitions.Contains(stateId);
             if (isNormalTransition) {
@@ -94,32 +94,22 @@ namespace RamjetAnvil.Unity.Utils {
             }
 
             _stack.Pop().State.OnExit();
-            // _stack.Peek().OnChildExited(stateId, data)
         }
 
-        private static IList<MethodInfo> GetMethodsWithAttribute(Type ownerType, Type type) {
-            var methods = ownerType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            var stateMethods = new List<MethodInfo>();
-            foreach (var m in methods) {
-                var attributes = m.GetCustomAttributes(type, false);
-                if (attributes.Length > 0) {
-                    UnityEngine.Debug.Log("Found owner method: " + m.Name);
-                    stateMethods.Add(m);
-                }
-            }
-            return stateMethods;
+        private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+        private static IList<MethodInfo> GetMethodsWithAttribute(Type ownerType, Type attributeType) {
+            return ReflectionUtils.GetMethodsWithAttribute(ownerType, attributeType, Flags);
         }
 
         private IDictionary<string, EventInfo> GetMatchingOwnerEvents(Type ownerType, IEnumerable<MethodInfo> methods) {
             var stateEvents = new Dictionary<string, EventInfo>();
 
-            var events = ownerType.GetEvents(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            var events = ownerType.GetEvents(Flags);
             foreach (var e in events) {
                 foreach (var m in methods) {
-                    UnityEngine.Debug.Log(m.Name);
                     if (e.Name.Equals("On" + m.Name)) {
                         stateEvents.Add(m.Name, e);
-                        UnityEngine.Debug.Log("Found owner event: " + e.Name);
                     }
                 }
             }
@@ -136,9 +126,8 @@ namespace RamjetAnvil.Unity.Utils {
             foreach (var mS in stateMethods) {
                 foreach (var mO in ownerMethods) {
                     if (mS.Name == mO.Name) {
-                        var del = ToDelegate(mS, state);
+                        var del = ReflectionUtils.ToDelegate(mS, state);
                         implementedMethods.Add(mO.Name, del);
-                        UnityEngine.Debug.Log("Found state delegate: " + mS.Name);
                     }
                 }
             }
@@ -146,33 +135,7 @@ namespace RamjetAnvil.Unity.Utils {
             return implementedMethods;
         }
 
-        /// <summary>
-        /// Builds a Delegate instance from the supplied MethodInfo object and a target to invoke against.
-        /// </summary>
-        private static Delegate ToDelegate(MethodInfo methodInfo, object target) {
-            if (methodInfo == null) throw new ArgumentNullException("methodInfo");
-
-            Type delegateType;
-
-            var typeArgs = methodInfo.GetParameters()
-                .Select(p => p.ParameterType)
-                .ToList();
-
-            // builds a delegate type
-            if (methodInfo.ReturnType == typeof(void)) {
-                delegateType = Expression.GetActionType(typeArgs.ToArray());
-            } else {
-                typeArgs.Add(methodInfo.ReturnType);
-                delegateType = Expression.GetFuncType(typeArgs.ToArray());
-            }
-
-            // creates a binded delegate if target is supplied
-            var result = (target == null)
-                ? Delegate.CreateDelegate(delegateType, methodInfo)
-                : Delegate.CreateDelegate(delegateType, target, methodInfo);
-
-            return result;
-        }
+        
 
         private void SetOwnerDelegates(StateInstance oldState, StateInstance newState) {
             foreach (var pair in _ownerEvents) {
@@ -181,7 +144,6 @@ namespace RamjetAnvil.Unity.Utils {
                 }
                 if (newState.StateDelegates.ContainsKey(pair.Key)) {
                     pair.Value.AddEventHandler(_owner, newState.StateDelegates[pair.Key]);
-                    UnityEngine.Debug.Log("Hooking up state event: " + newState.StateDelegates[pair.Key]);
                 }
             }
         }
