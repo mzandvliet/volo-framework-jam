@@ -25,49 +25,6 @@ namespace RamjetAnvil.Unity.Utils {
 
     public class StateMethodAttribute : Attribute { }
 
-    public class StateMachineConfig {
-
-        private readonly IDictionary<StateId, StateConfig> _states;
-        private StateId? _initialState;
-
-        public StateMachineConfig() {
-            _states = new Dictionary<StateId, StateConfig>();
-            _initialState = null;
-        }
-
-        public StateConfig AddState(StateId stateId, Type type) {
-            var stateConfig = new StateConfig(stateId, type);
-            _states.Add(stateId, stateConfig);
-            return stateConfig;
-        }
-
-        public StateMachineConfig SetInitialState(StateId initialState) {
-            if (!_states.ContainsKey(initialState)) {
-                throw new Exception("Configuring an initial state: " + initialState + " that does not exist");
-            }
-            _initialState = initialState;
-            return this;
-        }
-
-        public IDictionary<StateId, StateConfig> States {
-            get { return _states; }
-        }
-
-        public StateId? InitialState {
-            get { return _initialState; }
-        }
-    }
-
-    public static class StateMachineConfigExtensions {
-
-        public static StateMachine<T> Build<T>(this StateMachineConfig config, T owner, object initialStateData) {
-            if (config.InitialState == null) {
-                throw new Exception("No initial state configured, cannot instantiate state machine");
-            }
-            return new StateMachine<T>(owner, config, initialStateData);
-        }
-    }
-
     public interface IStateMachine {
         void Transition(StateId stateId, object data);
         void TransitionToParent();
@@ -75,37 +32,44 @@ namespace RamjetAnvil.Unity.Utils {
 
     public class StateMachine<T> : IStateMachine {
         private readonly T _owner;
-        private readonly StateMachineConfig _config;
+        private readonly IDictionary<StateId, StateInstance> _states;
         private readonly IteratableStack<StateInstance> _stack;
 
         private readonly IList<MethodInfo> _ownerMethods;
         private readonly IDictionary<string, EventInfo> _ownerEvents;
 
-        public StateMachine(T owner, StateMachineConfig config, object initialStateData) {
+        public StateMachine(T owner) {
             _owner = owner;
-            _config = config;
             _stack = new IteratableStack<StateInstance>();
 
             Type type = typeof (T);
-            _ownerMethods = FindOwnerMethods(type);
-            _ownerEvents = FindOwnerEvents(type, _ownerMethods);
-            
-            var initialStateConfig = _config.States[_config.InitialState.Value];
-            var stateInstance = CreateStateInstance(initialStateConfig, _ownerMethods, this);
-            _stack.Push(stateInstance);
-            SetOwnerDelegates(null, stateInstance);
-            stateInstance.State.OnEnter(initialStateData);
+            _ownerMethods = GetMethodsWithAttribute(typeof(T), typeof(StateMethodAttribute));
+            _ownerEvents = GetMatchingOwnerEvents(type, _ownerMethods);
+        }
+
+        public void Start(StateId stateId, object initialStateData) {
+            StateInstance instance = _states[stateId];
+            _stack.Push(instance);
+
+            SetOwnerDelegates(null, instance);
+            instance.State.OnEnter(initialStateData);
+        }
+
+        public StateInstance AddState(StateId stateId, State state) {
+            var instance = new StateInstance(stateId, state, GetImplementedStateMethods(state, _ownerMethods));
+            _states.Add(stateId, instance);
+            return instance;
         }
 
         public void Transition(StateId stateId, object data) {
-            var oldStateInstance = _stack.Peek();
+            var oldState = _stack.Peek();
 
             // Todo: better handling of parent-to-child transition. It's not onexit, but things do change for the parent
 
-            var isNormalTransition = oldStateInstance.Config.Transitions.Contains(stateId);
-            var isChildTransition = oldStateInstance.Config.ChildTransitions.Contains(stateId);
+            var isNormalTransition = oldState.Transitions.Contains(stateId);
+            var isChildTransition = oldState.ChildTransitions.Contains(stateId);
             if (isNormalTransition) {
-                oldStateInstance.State.OnExit();
+                oldState.State.OnExit();
                 _stack.Pop();
             } else if (isChildTransition) {
 
@@ -113,13 +77,11 @@ namespace RamjetAnvil.Unity.Utils {
                 throw new Exception(string.Format("Transition to state '{0}' is not registered, transition failed", stateId));
             }
 
-            var newStateConfig = _config.States[stateId];
-            var newStateInstance = CreateStateInstance(newStateConfig, _ownerMethods, this);
-            _stack.Push(newStateInstance);
+            var newState = _states[stateId];
+            _stack.Push(newState);
 
-            SetOwnerDelegates(oldStateInstance, newStateInstance);
-
-            newStateInstance.State.OnEnter(data);
+            SetOwnerDelegates(oldState, newState);
+            newState.State.OnEnter(data);
         }
 
         public void TransitionToParent() {
@@ -131,11 +93,11 @@ namespace RamjetAnvil.Unity.Utils {
             // _stack.Peek().OnChildExited(stateId, data)
         }
 
-        private static IList<MethodInfo> FindOwnerMethods(Type ownerType) {
+        private static IList<MethodInfo> GetMethodsWithAttribute(Type ownerType, Type type) {
             var methods = ownerType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             var stateMethods = new List<MethodInfo>();
             foreach (var m in methods) {
-                var attributes = m.GetCustomAttributes(typeof (StateMethodAttribute), false);
+                var attributes = m.GetCustomAttributes(type, false);
                 if (attributes.Length > 0) {
                     UnityEngine.Debug.Log("Found owner method: " + m.Name);
                     stateMethods.Add(m);
@@ -144,7 +106,7 @@ namespace RamjetAnvil.Unity.Utils {
             return stateMethods;
         }
 
-        private IDictionary<string, EventInfo> FindOwnerEvents(Type ownerType, IEnumerable<MethodInfo> methods) {
+        private IDictionary<string, EventInfo> GetMatchingOwnerEvents(Type ownerType, IEnumerable<MethodInfo> methods) {
             var stateEvents = new Dictionary<string, EventInfo>();
 
             var events = ownerType.GetEvents(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
@@ -161,7 +123,7 @@ namespace RamjetAnvil.Unity.Utils {
             return stateEvents;
         }
 
-        private static IDictionary<string, Delegate> GetImplementedStateDelegates(State state, IEnumerable<MethodInfo> ownerMethods) {
+        private static IDictionary<string, Delegate> GetImplementedStateMethods(State state, IEnumerable<MethodInfo> ownerMethods) {
             var implementedMethods = new Dictionary<string, Delegate>();
 
             Type type = state.GetType();
@@ -183,36 +145,29 @@ namespace RamjetAnvil.Unity.Utils {
         /// <summary>
         /// Builds a Delegate instance from the supplied MethodInfo object and a target to invoke against.
         /// </summary>
-        private static Delegate ToDelegate(MethodInfo mi, object target) {
-            if (mi == null) throw new ArgumentNullException("Failed to construct delegate, Method Info is null");
+        private static Delegate ToDelegate(MethodInfo methodInfo, object target) {
+            if (methodInfo == null) throw new ArgumentNullException("methodInfo");
 
             Type delegateType;
 
-            var typeArgs = mi.GetParameters()
+            var typeArgs = methodInfo.GetParameters()
                 .Select(p => p.ParameterType)
                 .ToList();
 
             // builds a delegate type
-            if (mi.ReturnType == typeof(void)) {
+            if (methodInfo.ReturnType == typeof(void)) {
                 delegateType = Expression.GetActionType(typeArgs.ToArray());
-
             } else {
-                typeArgs.Add(mi.ReturnType);
+                typeArgs.Add(methodInfo.ReturnType);
                 delegateType = Expression.GetFuncType(typeArgs.ToArray());
             }
 
             // creates a binded delegate if target is supplied
             var result = (target == null)
-                ? Delegate.CreateDelegate(delegateType, mi)
-                : Delegate.CreateDelegate(delegateType, target, mi);
+                ? Delegate.CreateDelegate(delegateType, methodInfo)
+                : Delegate.CreateDelegate(delegateType, target, methodInfo);
 
             return result;
-        }
-
-        private static StateInstance CreateStateInstance(StateConfig config, IEnumerable<MethodInfo> ownerMethods, IStateMachine machine) {
-            var state = (State)Activator.CreateInstance(config.StateType, machine);
-            var delegates = GetImplementedStateDelegates(state, ownerMethods);
-            return new StateInstance(config, state, delegates);
         }
 
         private void SetOwnerDelegates(StateInstance oldState, StateInstance newState) {
@@ -267,47 +222,23 @@ namespace RamjetAnvil.Unity.Utils {
         }
     }
 
-    public class StateConfig {
-        public StateId StateId { get; private set; }
-        public Type StateType { get; private set; }
-        public IList<StateId> Transitions { get; private set; }
-        public IList<StateId> ChildTransitions { get; private set; }
-
-        public StateConfig(StateId stateId, Type type) {
-            StateId = stateId;
-            StateType = type;
-            Transitions = new List<StateId>();
-            ChildTransitions = new List<StateId>();
-        }
-
-        public StateConfig Permit(StateId stateId) {
-            Transitions.Add(stateId);
-            return this;
-        }
-
-        public StateConfig PermitChild(StateId stateId) {
-            ChildTransitions.Add(stateId);
-            return this;
-        }
-    }
-
     /// <summary>
     /// A state, plus metadata, which lives in the machine's stack
     /// </summary>
     public class StateInstance { 
-        private readonly StateConfig _config;
         private readonly State _state;
         private readonly IDictionary<string, Delegate> _stateDelegates;
 
-        public StateInstance(StateConfig config, State state, IDictionary<string, Delegate> stateDelegates) {
-            _config = config;
+        public StateInstance(StateId stateId, State state, IDictionary<string, Delegate> stateDelegates) {
+            StateId = stateId;
             _state = state;
             _stateDelegates = stateDelegates;
+
+            Transitions = new List<StateId>();
+            ChildTransitions = new List<StateId>();
         }
 
-        public StateConfig Config {
-            get { return _config; }
-        }
+        public StateId StateId { get; private set; }
 
         public State State {
             get { return _state; }
@@ -315,6 +246,19 @@ namespace RamjetAnvil.Unity.Utils {
 
         public IDictionary<string, Delegate> StateDelegates {
             get { return _stateDelegates; }
+        }
+
+        public IList<StateId> Transitions { get; private set; }
+        public IList<StateId> ChildTransitions { get; private set; }
+
+        public StateInstance Permit(StateId stateId) {
+            Transitions.Add(stateId);
+            return this;
+        }
+
+        public StateInstance PermitChild(StateId stateId) {
+            ChildTransitions.Add(stateId);
+            return this;
         }
     }
 

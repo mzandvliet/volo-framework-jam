@@ -1,14 +1,7 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using RamjetAnvil.Unity.Utils;
 using UnityEngine;
-using System.CodeDom;
-using System.CodeDom.Compiler;
-using System.ComponentModel;
-using System.Linq.Expressions;
-using System.Reflection;
-using Microsoft.CSharp;
 
 /* Test case:
  * - Start screen
@@ -31,26 +24,20 @@ public class Game : MonoBehaviour {
     private StateMachine<Game> _machine;
 
     private void Start() {
-        var gameMachineConfig = new StateMachineConfig();
+        _machine = new StateMachine<Game>(this);
 
-        gameMachineConfig.AddState(States.StartScreen, typeof(StartScreen))
+        _machine.AddState(States.StartScreen, new StartScreen(_machine))
             .Permit(States.InGame);
 
-
-        gameMachineConfig.AddState(States.InGame, typeof (InGame))
+        _machine.AddState(States.InGame, new InGame(_machine))
             .Permit(States.StartScreen);
-            //.PermitChild(States.Options);
 
-        /*
-        gameMachineConfig.AddState(States.Options, typeof(Options));
-         */
+         var inputDevices = new[] {new PlayerInputDevice()};
 
-        gameMachineConfig.SetInitialState(States.StartScreen);
-
-        var inputDevices = new[] {new PlayerInputDevice()};
-
-        _machine = gameMachineConfig.Build<Game>(this, inputDevices);
+        _machine.Start(States.StartScreen, inputDevices);
     }
+
+    #region State Methods
 
     protected event Action OnUpdate; 
     [StateMethod]
@@ -69,7 +56,9 @@ public class Game : MonoBehaviour {
         return false;
     }
 
+    #endregion
 
+    #region States
 
     private class StartScreen : State {
         private IList<PlayerInputDevice> _inputs;
@@ -86,7 +75,7 @@ public class Game : MonoBehaviour {
             for (int i = 0; i < _inputs.Count; i++) {
                 var input = _inputs[i];
                 if (input.AnyKeyDown()) {
-                    Machine.Transition(States.InGame, input);
+                    Machine.Transition(States.InGame, new InGame.EnterData() {});
                 }
             }
         }
@@ -131,42 +120,5 @@ public class Game : MonoBehaviour {
         }
     }
 
-    /*
-    private class Options : IState {
-        public void OnEnter(StateMachine machine, object data) {
-
-        }
-
-        public void OnExit() {
-        }
-    }*/
-
-    //private static void Create() {
-    //    var compileUnit = new CodeCompileUnit();
-    //    var myNamespace = new CodeNamespace("MyNamespace");
-    //    var myClass = new CodeTypeDeclaration("MyClass");
-    //    var method = new CodeMemberMethod();
-    //    method.Name = "MyMethod";
-    //    method.ReturnType = new CodeTypeReference("System.String");
-    //    method.Parameters.Add(new CodeParameterDeclarationExpression("System.String", "text"));
-    //    method.Statements.Add(new CodeMethodReturnStatement(new CodeArgumentReferenceExpression("text")));
-    //    myClass.Members.Add(method);
-    //    myNamespace.Types.Add(myClass);
-    //    compileUnit.Namespaces.Add(myNamespace);
-
-    //    var provider = new CSharpCodeProvider();
-    //    var cp = new CompilerParameters();
-    //    cp.GenerateExecutable = false;
-    //    cp.GenerateInMemory = true;
-
-    //    var cr = provider.CompileAssemblyFromDom(cp, compileUnit);
-
-    //    //var myType = cr.CompiledAssembly.GetType("MyNamespace.MyClass");
-    //    //var instance = Activator.CreateInstance(myType);
-    //    var instance = cr.CompiledAssembly.CreateInstance("MyNamespace.MyClass");
-    //    var myType = instance.GetType();
-    //    var methodInfo = myType.GetMethod("MyMethod", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-    //    var result = methodInfo.Invoke(instance, new[] { (object)"Hello World" });
-    //    Debug.Log((string)result);
-    //}
+    #endregion
 }
