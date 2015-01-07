@@ -62,6 +62,10 @@ namespace RamjetAnvil.Unity.Utils {
         }
 
         public StateInstance AddState(StateId stateId, State state) {
+            if (_states.ContainsKey(stateId)) {
+                throw new ArgumentException(string.Format("StateId {0} is already registered.", stateId));
+            }
+
             var instance = new StateInstance(stateId, state, GetImplementedStateMethods(state, _ownerMethods));
             _states.Add(stateId, instance);
             return instance;
@@ -71,7 +75,7 @@ namespace RamjetAnvil.Unity.Utils {
             var oldState = _stack.Peek();
 
             var isNormalTransition = oldState.Transitions.Contains(stateId);
-            var isChildTransition = oldState.ChildTransitions.Contains(stateId);
+            var isChildTransition = !isNormalTransition && oldState.ChildTransitions.Contains(stateId);
             if (isNormalTransition) {
                 oldState.State.OnExit();
                 _stack.Pop();

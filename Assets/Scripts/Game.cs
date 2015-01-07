@@ -33,7 +33,8 @@ public class Game : MonoBehaviour {
             .Permit(States.InGame);
 
         _machine.AddState(States.InGame, new InGame(_machine, _characterPrefab, _playerCamera))
-            .Permit(States.StartScreen);
+            .Permit(States.StartScreen)
+            .Permit(States.ScoreScreen);
 
         _machine.AddState(States.ScoreScreen, new ScoreScreen(_machine));
 
@@ -124,8 +125,8 @@ public class Game : MonoBehaviour {
 
         private void Update() {
             if (Time.time - _startTime > 10f) {
-                Machine.Transition(States.StartScreen, new Dictionary<string, object>() {
-                    { "Score", 1234 }
+                Machine.Transition(States.ScoreScreen, new Dictionary<string, object>() {
+                    { "score", 1234 }
                 });
             }
         }
