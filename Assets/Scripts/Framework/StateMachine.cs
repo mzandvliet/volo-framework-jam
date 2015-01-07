@@ -1,57 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
+using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
 
 /*
- * ----------- Architecture issues: --------
+ * Todo:
  * 
- * One monolithic statemachine is as evil as a giant inheritance tree. Have tiny state machines per aspect, like components,
- * related through loose coupling.
- * 
- * Remove event propagation from the machines.
- * 
- * MonoBehaviours as StateMachines
- * 
- * Can we have a monobehaviour react differently to events, input, collision, by using a state machine? Hope so!
- * In addition, a character machine can change an object hierarchy depending on state.
- * 
- * A good helper would be an optional StateMachineBehaviour to inherit from, with states catching all relevant
- * callbacks from the MonoBehaviour interface. Hmm, in that case it makes sense to use reflection to find implemented
- * callbacks, if any exist.
- * 
- * --------- Dependency issues ---------
- * 
- * A state wants to make side effects. It needs access to things like a spawner, a camera system, etc. Inject them?
- * 
- * SERVICE LOCATOR IS SHIT. You can't make a scene with just a camera system, as having a service locator
- * requires all other services for that locator to be loaded.
- * 
- * --------- Mods ---------------
- * 
- * Since we're on the subject of global architecture now, we might also want to start thinking about how
- * mods would work, how they are loaded and how they interact with the core of the game, and with eachother.
- * 
- * My guess is the core of Volo should just be like any other mod in the ecosystem, but loaded by default.
- * 
- * ---------- Parenting issues ---------
- * 
- * - Are parents considered active, while a child is at the top of the stack?
- * 
- * - If you transition back to parent, parent needs to know (respond to it)
- * 
- * Suppose a child could exit and pass optional data along to the parent? And a child could be sent
- * optional data when it is entered?
- * 
- * - If you have a hierarchy of 10 nested states, and all of them are active: bugs
- * 
- * - Is it always possible to transition to a parent from any child? Or do we say some child
- * states cannot exit to their parent? (Stateless has explicit permitions for parent transitions)
- * 
- * Transition modeling
- * 
- * - Maybe timed transitions are just states with a single entry and exit state, and a timer?
- *
+ * The owner's events should really just be references to delegates, I think. No need for multicast.
  */
 namespace RamjetAnvil.Unity.Utils {
 
@@ -104,99 +60,66 @@ namespace RamjetAnvil.Unity.Utils {
 
     public static class StateMachineConfigExtensions {
 
-        public static StateMachine<T> Build<T>(this StateMachineConfig config, object initialStateData) {
+        public static StateMachine<T> Build<T>(this StateMachineConfig config, T owner, object initialStateData) {
             if (config.InitialState == null) {
                 throw new Exception("No initial state configured, cannot instantiate state machine");
             }
-            return new StateMachine<T>(config, initialStateData);
+            return new StateMachine<T>(owner, config, initialStateData);
         }
     }
 
-    public class StateMachine<T> {
+    public interface IStateMachine {
+        void Transition(StateId stateId, object data);
+        void TransitionToParent();
+    }
+
+    public class StateMachine<T> : IStateMachine {
+        private readonly T _owner;
         private readonly StateMachineConfig _config;
         private readonly IteratableStack<StateInstance> _stack;
 
-        public StateMachine(StateMachineConfig config, object initialStateData) {
+        private readonly IList<MethodInfo> _ownerMethods;
+        private readonly IDictionary<string, EventInfo> _ownerEvents;
+
+        public StateMachine(T owner, StateMachineConfig config, object initialStateData) {
+            _owner = owner;
             _config = config;
             _stack = new IteratableStack<StateInstance>();
 
-            var ownerEvents = FindOwnerEvents(typeof (T), null);
-            FindStateMethods();
-
-            var initialStateConfig = _config.States[_config.InitialState.Value];
-            var state = CreateState(initialStateConfig.StateType);
-            _stack.Push(new StateInstance(initialStateConfig, state, null));
-            state.OnEnter(initialStateData);
-        }
-
-        private IList<MethodInfo> FindStateMethods() {
-            var type = typeof (T);
-            var methods = type.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic);
-            var stateMethods = new List<MethodInfo>();
-            foreach (var m in methods) {
-                var attributes = m.GetCustomAttributes(typeof (StateMethodAttribute), false);
-                if (attributes.Length > 0) {
-                    UnityEngine.Debug.Log("Found method: " + m.Name);
-                    stateMethods.Add(m);
-                }
-            }
-            return stateMethods;
-        }
-
-        private void FindMethodsInStates(IList<MethodInfo> methodInfo) {
-            foreach (var pair in _config.States) {
-                var stateType = pair.Value.StateType;
-                var methods = stateType.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic);
-                foreach (var m in methods) {
-                    foreach (var method in methodInfo) {
-                        if (m.Name == method.Name) {
-                            UnityEngine.Debug.Log("Found match: " + m.Name + " -> " + method.Name);
-                        }
-                    }
-                }
-            }
-        }
-
-        private IDictionary<string, EventInfo> FindOwnerEvents(Type ownerType, IEnumerable<MethodInfo> methods) {
-            var stateEvents = new Dictionary<string, EventInfo>();
+            Type type = typeof (T);
+            _ownerMethods = FindOwnerMethods(type);
+            _ownerEvents = FindOwnerEvents(type, _ownerMethods);
             
-            var events = ownerType.GetEvents(BindingFlags.Instance | BindingFlags.NonPublic);
-            foreach (var e in events) {
-                foreach (var m in methods) {
-                    // todo: signature checks
-                    if (e.Name.Equals("On" + m.Name)) {
-                        stateEvents.Add(m.Name, e);
-                    }
-                }
-            }
-
-            return stateEvents;
+            var initialStateConfig = _config.States[_config.InitialState.Value];
+            var stateInstance = CreateStateInstance(initialStateConfig, _ownerMethods, this);
+            _stack.Push(stateInstance);
+            SetOwnerDelegates(null, stateInstance);
+            stateInstance.State.OnEnter(initialStateData);
         }
 
         public void Transition(StateId stateId, object data) {
-            var currentState = _stack.Peek();
+            var oldStateInstance = _stack.Peek();
 
-            var isNormalTransition = currentState.Config.Transitions.Contains(stateId);
-            var isChildTransition = currentState.Config.ChildTransitions.Contains(stateId);
+            // Todo: better handling of parent-to-child transition. It's not onexit, but things do change for the parent
+
+            var isNormalTransition = oldStateInstance.Config.Transitions.Contains(stateId);
+            var isChildTransition = oldStateInstance.Config.ChildTransitions.Contains(stateId);
             if (isNormalTransition) {
-                currentState.State.OnExit();
+                oldStateInstance.State.OnExit();
                 _stack.Pop();
-
-                var newStateConfig = _config.States[stateId];
-
-                var newStateInstance = CreateState(newStateConfig.StateType);
-                _stack.Push(new StateInstance(newStateConfig, newStateInstance));
-                newStateInstance.OnEnter(data);
             } else if (isChildTransition) {
-                var newStateConfig = _config.States[stateId];
 
-                var newStateInstance = CreateState(newStateConfig.StateType);
-                _stack.Push(new StateInstance(newStateConfig, newStateInstance));
-                newStateInstance.OnEnter(data);
-            }
-            else {
+            } else {
                 throw new Exception(string.Format("Transition to state '{0}' is not registered, transition failed", stateId));
             }
+
+            var newStateConfig = _config.States[stateId];
+            var newStateInstance = CreateStateInstance(newStateConfig, _ownerMethods, this);
+            _stack.Push(newStateInstance);
+
+            SetOwnerDelegates(oldStateInstance, newStateInstance);
+
+            newStateInstance.State.OnEnter(data);
         }
 
         public void TransitionToParent() {
@@ -208,9 +131,100 @@ namespace RamjetAnvil.Unity.Utils {
             // _stack.Peek().OnChildExited(stateId, data)
         }
 
-        // Todo: Create states based on Type with this, instead of caching instances created externally
-        private static IState CreateState(Type stateType) {
-            return (IState)Activator.CreateInstance(stateType);
+        private static IList<MethodInfo> FindOwnerMethods(Type ownerType) {
+            var methods = ownerType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            var stateMethods = new List<MethodInfo>();
+            foreach (var m in methods) {
+                var attributes = m.GetCustomAttributes(typeof (StateMethodAttribute), false);
+                if (attributes.Length > 0) {
+                    UnityEngine.Debug.Log("Found owner method: " + m.Name);
+                    stateMethods.Add(m);
+                }
+            }
+            return stateMethods;
+        }
+
+        private IDictionary<string, EventInfo> FindOwnerEvents(Type ownerType, IEnumerable<MethodInfo> methods) {
+            var stateEvents = new Dictionary<string, EventInfo>();
+
+            var events = ownerType.GetEvents(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            foreach (var e in events) {
+                foreach (var m in methods) {
+                    UnityEngine.Debug.Log(m.Name);
+                    if (e.Name.Equals("On" + m.Name)) {
+                        stateEvents.Add(m.Name, e);
+                        UnityEngine.Debug.Log("Found owner event: " + e.Name);
+                    }
+                }
+            }
+
+            return stateEvents;
+        }
+
+        private static IDictionary<string, Delegate> GetImplementedStateDelegates(State state, IEnumerable<MethodInfo> ownerMethods) {
+            var implementedMethods = new Dictionary<string, Delegate>();
+
+            Type type = state.GetType();
+
+            var stateMethods = type.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic);
+            foreach (var mS in stateMethods) {
+                foreach (var mO in ownerMethods) {
+                    if (mS.Name == mO.Name) {
+                        var del = ToDelegate(mS, state);
+                        implementedMethods.Add(mO.Name, del);
+                        UnityEngine.Debug.Log("Found state delegate: " + mS.Name);
+                    }
+                }
+            }
+
+            return implementedMethods;
+        }
+
+        /// <summary>
+        /// Builds a Delegate instance from the supplied MethodInfo object and a target to invoke against.
+        /// </summary>
+        private static Delegate ToDelegate(MethodInfo mi, object target) {
+            if (mi == null) throw new ArgumentNullException("Failed to construct delegate, Method Info is null");
+
+            Type delegateType;
+
+            var typeArgs = mi.GetParameters()
+                .Select(p => p.ParameterType)
+                .ToList();
+
+            // builds a delegate type
+            if (mi.ReturnType == typeof(void)) {
+                delegateType = Expression.GetActionType(typeArgs.ToArray());
+
+            } else {
+                typeArgs.Add(mi.ReturnType);
+                delegateType = Expression.GetFuncType(typeArgs.ToArray());
+            }
+
+            // creates a binded delegate if target is supplied
+            var result = (target == null)
+                ? Delegate.CreateDelegate(delegateType, mi)
+                : Delegate.CreateDelegate(delegateType, target, mi);
+
+            return result;
+        }
+
+        private static StateInstance CreateStateInstance(StateConfig config, IEnumerable<MethodInfo> ownerMethods, IStateMachine machine) {
+            var state = (State)Activator.CreateInstance(config.StateType, machine);
+            var delegates = GetImplementedStateDelegates(state, ownerMethods);
+            return new StateInstance(config, state, delegates);
+        }
+
+        private void SetOwnerDelegates(StateInstance oldState, StateInstance newState) {
+            foreach (var pair in _ownerEvents) {
+                if (oldState != null && oldState.StateDelegates.ContainsKey(pair.Key)) {
+                    pair.Value.RemoveEventHandler(_owner, oldState.StateDelegates[pair.Key]);
+                }
+                if (newState.StateDelegates.ContainsKey(pair.Key)) {
+                    pair.Value.AddEventHandler(_owner, newState.StateDelegates[pair.Key]);
+                    UnityEngine.Debug.Log("Hooking up state event: " + newState.StateDelegates[pair.Key]);
+                }
+            }
         }
     }
 
@@ -277,33 +291,56 @@ namespace RamjetAnvil.Unity.Utils {
         }
     }
 
-    public class StateInstance { // in stack
+    /// <summary>
+    /// A state, plus metadata, which lives in the machine's stack
+    /// </summary>
+    public class StateInstance { 
         private readonly StateConfig _config;
-        private readonly IState _state;
-        private readonly IDictionary<string, MethodInfo> _stateMethods;
+        private readonly State _state;
+        private readonly IDictionary<string, Delegate> _stateDelegates;
 
-        public StateInstance(StateConfig config, IState state, IDictionary<string, MethodInfo> stateMethods) {
+        public StateInstance(StateConfig config, State state, IDictionary<string, Delegate> stateDelegates) {
             _config = config;
             _state = state;
-            _stateMethods = stateMethods;
+            _stateDelegates = stateDelegates;
         }
 
         public StateConfig Config {
             get { return _config; }
         }
 
-        public IState State {
+        public State State {
             get { return _state; }
         }
 
-        public IDictionary<string, MethodInfo> StateMethods {
-            get { return _stateMethods; }
+        public IDictionary<string, Delegate> StateDelegates {
+            get { return _stateDelegates; }
         }
     }
 
-    public interface IState {
-        void OnEnter(object data); // object might not be handiest type for passing multiple arguments
+    /// <summary>
+    /// 
+    /// </summary>
+    /// Todo:
+    /// - Could remove this interface and find implementations through reflection
+    /// - Also, this means boilerplate in implementations (caching the machine ref)
+    /// - object might not be handiest type for passing multiple arguments, but are by far the most flexible
+    /*public interface IState {
+        void OnEnter(object data); 
         void OnExit();
+    }*/
+
+    public class State {
+        protected IStateMachine Machine { get; private set; }
+        public State(IStateMachine machine) {
+            Machine = machine;
+        }
+
+        public virtual void OnEnter(object data) {
+        }
+
+        public virtual void OnExit() {
+        }
     }
 
     public class IteratableStack<T> {
