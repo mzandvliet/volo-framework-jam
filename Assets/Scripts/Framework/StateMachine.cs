@@ -8,6 +8,8 @@ using System.Reflection;
  * Todo:
  * 
  * The owner's events should really just be references to delegates, I think. No need for multicast.
+ * 
+ * Support Coroutines?
  */
 namespace RamjetAnvil.Unity.Utils {
 
@@ -26,7 +28,7 @@ namespace RamjetAnvil.Unity.Utils {
     public class StateMethodAttribute : Attribute { }
 
     public interface IStateMachine {
-        void Transition(StateId stateId, object data);
+        void Transition(StateId stateId, IDictionary<string, object> data);
         void TransitionToParent();
     }
 
@@ -40,6 +42,8 @@ namespace RamjetAnvil.Unity.Utils {
 
         public StateMachine(T owner) {
             _owner = owner;
+
+            _states = new Dictionary<StateId, StateInstance>();
             _stack = new IteratableStack<StateInstance>();
 
             Type type = typeof (T);
@@ -47,12 +51,12 @@ namespace RamjetAnvil.Unity.Utils {
             _ownerEvents = GetMatchingOwnerEvents(type, _ownerMethods);
         }
 
-        public void Start(StateId stateId, object initialStateData) {
+        public void Start(StateId stateId, IDictionary<string, object> data) {
             StateInstance instance = _states[stateId];
             _stack.Push(instance);
 
             SetOwnerDelegates(null, instance);
-            instance.State.OnEnter(initialStateData);
+            instance.State.OnEnter(data);
         }
 
         public StateInstance AddState(StateId stateId, State state) {
@@ -61,7 +65,7 @@ namespace RamjetAnvil.Unity.Utils {
             return instance;
         }
 
-        public void Transition(StateId stateId, object data) {
+        public void Transition(StateId stateId, IDictionary<string, object> data) {
             var oldState = _stack.Peek();
 
             // Todo: better handling of parent-to-child transition. It's not onexit, but things do change for the parent
@@ -262,17 +266,9 @@ namespace RamjetAnvil.Unity.Utils {
         }
     }
 
-    /// <summary>
-    /// 
-    /// </summary>
-    /// Todo:
-    /// - Could remove this interface and find implementations through reflection
-    /// - Also, this means boilerplate in implementations (caching the machine ref)
-    /// - object might not be handiest type for passing multiple arguments, but are by far the most flexible
-    /*public interface IState {
-        void OnEnter(object data); 
-        void OnExit();
-    }*/
+    
+    /* Todo: Maybe make State<T, U, V> overloads, which define arguments passed into OnEnter, or try 
+     * a reflection approach similar to the StateMethod linking. */
 
     public class State {
         protected IStateMachine Machine { get; private set; }
@@ -280,7 +276,7 @@ namespace RamjetAnvil.Unity.Utils {
             Machine = machine;
         }
 
-        public virtual void OnEnter(object data) {
+        public virtual void OnEnter(IDictionary<string, object> data) {
         }
 
         public virtual void OnExit() {

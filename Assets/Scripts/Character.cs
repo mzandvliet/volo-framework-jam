@@ -9,6 +9,16 @@ public class Character : MonoBehaviour {
     CharacterInput _input;
     //private StateMachine _machine;
 
+    public float WalkSpeed {
+        get { return _walkSpeed; }
+        set { _walkSpeed = value; }
+    }
+
+    public float TurnSpeed {
+        get { return _turnSpeed; }
+        set { _turnSpeed = value; }
+    }
+
     //private void Start() {
     //    var machineConfig = new StateMachineConfig();
     //    machineConfig.AddState(States.Alive, typeof(Alive))

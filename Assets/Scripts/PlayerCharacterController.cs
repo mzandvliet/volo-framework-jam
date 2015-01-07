@@ -8,11 +8,23 @@ public class PlayerCharacterController : MonoBehaviour {
     [SerializeField] private Camera _camera;
 
     private PlayerInputDevice _input;
-    private Vector3 _mouseWorldPos;
 
-    private void Awake() {
-        _input = new PlayerInputDevice();
+    public Character Character {
+        get { return _character; }
+        set { _character = value; }
     }
+
+    public PlayerInputDevice Input {
+        get { return _input; }
+        set { _input = value; }
+    }
+
+    public Camera Camera {
+        get { return _camera; }
+        set { _camera = value; }
+    }
+
+    private Vector3 _mouseWorldPos;
 
 	void Update () {
 	    var ray = _camera.ScreenPointToRay(_input.GetMousePosition());
