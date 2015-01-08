@@ -1,12 +1,14 @@
 ﻿using RamjetAnvil.Unity.Utils;
 using UnityEngine;
 
+[RequireComponent(typeof(Health))]
 public class Character : MonoBehaviour {
     [SerializeField] private GameObject _projectilePrefab;
     [SerializeField] private float _walkSpeed = 1f;
     [SerializeField] private float _turnSpeed = 45f;
 
-    CharacterInput _input;
+    private Health _health;
+    private CharacterInput _input;
     //private StateMachine _machine;
 
     public float WalkSpeed {
@@ -19,6 +21,13 @@ public class Character : MonoBehaviour {
         set { _turnSpeed = value; }
     }
 
+    private void Awake() {
+        _health = GetComponent<Health>();
+        _health.OnDied += health => {
+            Destroy(gameObject);
+        };
+    }
+
     //private void Start() {
     //    var machineConfig = new StateMachineConfig();
     //    machineConfig.AddState(States.Alive, typeof(Alive))
@@ -26,6 +35,7 @@ public class Character : MonoBehaviour {
     //    machineConfig.AddState(States.Dead, typeof(Dead));
     //    machineConfig.Build(this);
     //}
+
     void Update() {
         transform.Translate(new Vector3(_input.Walk.x, _input.Walk.y, 0f) * Time.deltaTime * _walkSpeed, Space.World);
         float angleToTarget = AngleSigned(transform.up, _input.Look);

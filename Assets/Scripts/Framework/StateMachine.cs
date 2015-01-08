@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Reflection;
 using UnityEngine;
 
@@ -8,10 +7,11 @@ using UnityEngine;
  * Todo:
  * 
  * The owner's events should really just be references to delegates, I think. No need for multicast.
- * 
  * Support Coroutines?
- * 
  * Special handling for parent->child and child-parent relationships?
+ * 
+ * Event propagation (damage dealing and handling with complex hierarchies is a good one)
+ * Timed, cancelable transitions (camera motions are a good one)
  */
 namespace RamjetAnvil.Unity.Utils {
 
@@ -56,7 +56,7 @@ namespace RamjetAnvil.Unity.Utils {
 
         public StateInstance AddState(StateId stateId, State state) {
             if (_states.ContainsKey(stateId)) {
-                throw new ArgumentException(string.Format("StateId {0} is already registered.", stateId));
+                throw new ArgumentException(string.Format("StateId '{0}' is already registered.", stateId));
             }
 
             var instance = new StateInstance(stateId, state, GetImplementedStateMethods(state, _ownerMethods));
@@ -98,7 +98,9 @@ namespace RamjetAnvil.Unity.Utils {
                 throw new InvalidOperationException("Cannot transition to parent state, currently at top-level state");
             }
 
-            _stack.Pop().Exit();
+            var oldState = _stack.Pop();
+            oldState.Exit();
+            SetOwnerDelegates(oldState, _stack.Peek());
         }
 
         private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
@@ -243,25 +245,27 @@ namespace RamjetAnvil.Unity.Utils {
             try {
                 _onEnter.DynamicInvoke(args);
             } catch (TargetParameterCountException e) {
-                var expectedArgs = _onEnter.Method.GetParameters();
-                string expectedArgTypes = "";
-                for (int i = 0; i < expectedArgs.Length; i++) {
-                    expectedArgTypes += expectedArgs[i].ParameterType.Name + (i < expectedArgs.Length - 1 ? ", " : "");
-                }
-
-                string receivedArgTypes = "";
-                for (int i = 0; i < args.Length; i++) {
-                    receivedArgTypes += args[i].GetType().Name + (i < args.Length - 1 ? ", " : "");
-                }
-
                 Debug.LogException(e);
-
-                throw new ArgumentException(
-                    string.Format("Wrong arguments for transition to state '{0}', expected: {1}; received: {2}",
-                    State.GetType(),
-                    expectedArgTypes,
-                    receivedArgTypes));
+                throw new ArgumentException(GetArgumentExceptionDetails(args));
             }
+        }
+
+        private string GetArgumentExceptionDetails(params object[] args) {
+            var expectedArgs = _onEnter.Method.GetParameters();
+            string expectedArgTypes = "";
+            for (int i = 0; i < expectedArgs.Length; i++) {
+                expectedArgTypes += expectedArgs[i].ParameterType.Name + (i < expectedArgs.Length - 1 ? ", " : "");
+            }
+
+            string receivedArgTypes = "";
+            for (int i = 0; i < args.Length; i++) {
+                receivedArgTypes += args[i].GetType().Name + (i < args.Length - 1 ? ", " : "");
+            }
+            return String.Format(
+                "Wrong arguments for transition to state '{0}', expected: {1}; received: {2}",
+                State.GetType(),
+                expectedArgTypes,
+                receivedArgTypes);
         }
 
         public void Exit() {
@@ -272,10 +276,12 @@ namespace RamjetAnvil.Unity.Utils {
             _onExit.DynamicInvoke();
         }
 
+        private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
         private static Delegate GetDelegateByName(State state, string name) {
             Type type = state.GetType();
 
-            var method = type.GetMethod(name);
+            var method = type.GetMethod(name, Flags);
             if (method != null) {
                 return ReflectionUtils.ToDelegate(method, state);
             }
