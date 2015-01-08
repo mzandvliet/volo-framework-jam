@@ -244,7 +244,6 @@ namespace RamjetAnvil.Unity.Utils {
                 _onEnter.DynamicInvoke(args);
             } catch (TargetParameterCountException e) {
                 var expectedArgs = _onEnter.Method.GetParameters();
-
                 string expectedArgTypes = "";
                 for (int i = 0; i < expectedArgs.Length; i++) {
                     expectedArgTypes += expectedArgs[i].ParameterType.Name + (i < expectedArgs.Length - 1 ? ", " : "");
@@ -255,6 +254,8 @@ namespace RamjetAnvil.Unity.Utils {
                     receivedArgTypes += args[i].GetType().Name + (i < args.Length - 1 ? ", " : "");
                 }
 
+                Debug.LogException(e);
+
                 throw new ArgumentException(
                     string.Format("Wrong arguments for transition to state '{0}', expected: {1}; received: {2}",
                     State.GetType(),
@@ -264,7 +265,7 @@ namespace RamjetAnvil.Unity.Utils {
         }
 
         public void Exit() {
-            if (_onEnter == null) {
+            if (_onExit == null) {
                 return;
             }
 
@@ -281,18 +282,6 @@ namespace RamjetAnvil.Unity.Utils {
             return null;
         }
     }
-
-    
-    /* Todo: Try to achieve some type safety for OnEnter
-     * 
-     * Maybe make State<T, U, V> overloads, which define arguments passed into OnEnter, or try 
-     * a reflection approach similar to the StateMethod linking.
-     * 
-     * What if we let OnEnter implementations specify arbitrary arguments, and them let the machine
-     * try to match them from given params?
-     * 
-     * A readable runtime argument exception is better than a random failure somewhere down the line. 
-     */
 
     public class State {
         protected IStateMachine Machine { get; private set; }

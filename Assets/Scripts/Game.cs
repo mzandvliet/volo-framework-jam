@@ -53,6 +53,14 @@ public class Game : MonoBehaviour {
         }
     }
 
+    public event Action OnOnGUI;
+    [StateMethod]
+    private void OnGUI() {
+        if (OnOnGUI != null) {
+            OnOnGUI();
+        }
+    }
+
     #endregion
 
     #region States
@@ -71,6 +79,10 @@ public class Game : MonoBehaviour {
                     Machine.Transition(States.InGame, input);
                 }
             }
+        }
+
+        private void OnGUI() {
+            GUI.Label(new Rect(Screen.width * 0.5f, Screen.height * 0.5f, 200f, 50f), "Press any key to begin");
         }
     }
 
@@ -126,9 +138,13 @@ public class Game : MonoBehaviour {
         }
 
         private void Update() {
-            if (Time.time - _startTime > 10f) {
+            if (Time.time - _startTime > 5f) {
                 Machine.Transition(States.ScoreScreen, 1234, _input);
             }
+        }
+
+        private void OnGUI() {
+            GUI.Label(new Rect(Screen.width * 0.05f, Screen.height * 0.05f, 200f, 50f), "====== Score: " + 1234 + " ======");
         }
 
         public void OnExit() {
@@ -142,13 +158,24 @@ public class Game : MonoBehaviour {
     }
 
     private class ScoreScreen : State {
+        private int _score;
+        private PlayerInputDevice _input;
+        
         public ScoreScreen(IStateMachine machine) : base(machine) {}
 
         public void OnEnter(int score, PlayerInputDevice input) {
-            Debug.Log("====== Score: " + score + " ======");
-            if (input.AnyKeyDown()) {
+            _score = score;
+            _input = input;
+        }
+
+        private void Update() {
+            if (_input.AnyKeyDown()) {
                 Machine.Transition(States.StartScreen, null);
             }
+        }
+
+        private void OnGUI() {
+            GUI.Label(new Rect(Screen.width * 0.5f, Screen.height * 0.5f, 200f, 50f), "====== Score: " + _score + " ======");
         }
     }
 

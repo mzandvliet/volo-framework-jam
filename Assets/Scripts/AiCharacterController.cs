@@ -15,8 +15,6 @@ public class AiCharacterController : MonoBehaviour {
         set { _target = value; }
     }
 
-    private Vector3 _mouseWorldPos;
-
     void Update() {
         Vector2 targetDirection = (_target.transform.position - _character.transform.position).normalized;
 
@@ -25,10 +23,5 @@ public class AiCharacterController : MonoBehaviour {
             Look = targetDirection,
             Shoot = false
         });
-    }
-
-    void OnDrawGizmos() {
-        Gizmos.color = Color.red;
-        Gizmos.DrawSphere(_mouseWorldPos, 0.5f);
     }
 }
