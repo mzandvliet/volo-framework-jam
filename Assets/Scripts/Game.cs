@@ -68,7 +68,7 @@ public class Game : MonoBehaviour {
             for (int i = 0; i < _inputs.Count; i++) {
                 var input = _inputs[i];
                 if (input.AnyKeyDown()) {
-                    Machine.Transition(States.InGame, new Dictionary<string, object> { { "input", 1 } });
+                    Machine.Transition(States.InGame, new Dictionary<string, object> { { "input", input } });
                 }
             }
         }
@@ -88,7 +88,7 @@ public class Game : MonoBehaviour {
             _enemies = new List<Character>();
         }
 
-        [OnEnterArgument("input", typeof(PlayerInputDevice))]
+        [RequiredArgument("input", typeof(PlayerInputDevice))]
         public override void OnEnter(IDictionary<string, object> data) {
             var playerInput = (PlayerInputDevice) data["input"];
 
@@ -147,8 +147,8 @@ public class Game : MonoBehaviour {
     private class ScoreScreen : State {
         public ScoreScreen(IStateMachine machine) : base(machine) {}
 
-        [OnEnterArgument("score", typeof(int))]
-        [OnEnterArgument("input", typeof(PlayerInputDevice))]
+        [RequiredArgument("score", typeof(int))]
+        [RequiredArgument("input", typeof(PlayerInputDevice))]
         public override void OnEnter(IDictionary<string, object> data) {
             Debug.Log("====== Score: " + data["score"] + " ======");
             var input = (PlayerInputDevice)data["input"];

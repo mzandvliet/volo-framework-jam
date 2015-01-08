@@ -30,11 +30,11 @@ namespace RamjetAnvil.Unity.Utils {
     public class StateMethodAttribute : Attribute { }
 
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
-    public class OnEnterArgument : Attribute {
+    public class RequiredArgument : Attribute {
         public string Name { get; private set; }
         public Type Type { get; private set; }
 
-        public OnEnterArgument(string name, Type type) {
+        public RequiredArgument(string name, Type type) {
             Name = name;
             Type = type;
         }
@@ -171,8 +171,8 @@ namespace RamjetAnvil.Unity.Utils {
 
             var method = type.GetMethod("OnEnter");
             if (method != null) {
-                foreach (var a in method.GetCustomAttributes(typeof(OnEnterArgument), false)) {
-                    var attribute = (OnEnterArgument) a;
+                foreach (var a in method.GetCustomAttributes(typeof(RequiredArgument), false)) {
+                    var attribute = (RequiredArgument) a;
                     arguments.Add(attribute.Name, attribute.Type);
                 }
             }
