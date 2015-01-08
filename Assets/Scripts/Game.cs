@@ -40,7 +40,7 @@ public class Game : MonoBehaviour {
         _machine.AddState(States.ScoreScreen, new ScoreScreen(_machine))
             .Permit(States.StartScreen);
 
-        _machine.Start(States.StartScreen, null);
+        _machine.Start(States.StartScreen);
     }
 
     #region State Methods
@@ -68,7 +68,7 @@ public class Game : MonoBehaviour {
             for (int i = 0; i < _inputs.Count; i++) {
                 var input = _inputs[i];
                 if (input.AnyKeyDown()) {
-                    Machine.Transition(States.InGame, new Dictionary<string, object> { { "input", input } });
+                    Machine.Transition(States.InGame, input);
                 }
             }
         }
@@ -77,6 +77,7 @@ public class Game : MonoBehaviour {
     private class InGame : State {
         private GameObject _characterPrefab;
         private Camera _camera;
+        private PlayerInputDevice _input;
         private Character _player;
         private IList<Character> _enemies;
 
@@ -88,13 +89,11 @@ public class Game : MonoBehaviour {
             _enemies = new List<Character>();
         }
 
-        [RequiredArgument("input", typeof(PlayerInputDevice))]
-        public override void OnEnter(IDictionary<string, object> data) {
-            var playerInput = (PlayerInputDevice) data["input"];
-
+        public void OnEnter(PlayerInputDevice input) {
+            _input = input;
             _startTime = Time.time;
-
-            SpawnPlayer(playerInput);
+            
+            SpawnPlayer(input);
             SpawnEnemies();
         }
 
@@ -128,13 +127,11 @@ public class Game : MonoBehaviour {
 
         private void Update() {
             if (Time.time - _startTime > 10f) {
-                Machine.Transition(States.ScoreScreen, new Dictionary<string, object>() {
-                    { "score", 1234 }
-                });
+                Machine.Transition(States.ScoreScreen, 1234, _input);
             }
         }
 
-        public override void OnExit() {
+        public void OnExit() {
             Destroy(_player.gameObject);
 
             for (int i = 0; i < _enemies.Count; i++) {
@@ -147,11 +144,8 @@ public class Game : MonoBehaviour {
     private class ScoreScreen : State {
         public ScoreScreen(IStateMachine machine) : base(machine) {}
 
-        [RequiredArgument("score", typeof(int))]
-        [RequiredArgument("input", typeof(PlayerInputDevice))]
-        public override void OnEnter(IDictionary<string, object> data) {
-            Debug.Log("====== Score: " + data["score"] + " ======");
-            var input = (PlayerInputDevice)data["input"];
+        public void OnEnter(int score, PlayerInputDevice input) {
+            Debug.Log("====== Score: " + score + " ======");
             if (input.AnyKeyDown()) {
                 Machine.Transition(States.StartScreen, null);
             }

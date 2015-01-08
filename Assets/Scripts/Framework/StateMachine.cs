@@ -1,7 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
+using System.ComponentModel;
 using System.Reflection;
+using UnityEngine;
 
 /*
  * Todo:
@@ -29,19 +30,8 @@ namespace RamjetAnvil.Unity.Utils {
     [AttributeUsage(AttributeTargets.Method)]
     public class StateMethodAttribute : Attribute { }
 
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
-    public class RequiredArgument : Attribute {
-        public string Name { get; private set; }
-        public Type Type { get; private set; }
-
-        public RequiredArgument(string name, Type type) {
-            Name = name;
-            Type = type;
-        }
-    }
-
     public interface IStateMachine {
-        void Transition(StateId stateId, IDictionary<string, object> args);
+        void Transition(StateId stateId, params object[] args);
         void TransitionToParent();
     }
 
@@ -64,15 +54,6 @@ namespace RamjetAnvil.Unity.Utils {
             _ownerEvents = GetMatchingOwnerEvents(type, _ownerMethods);
         }
 
-        public void Start(StateId stateId, IDictionary<string, object> args) {
-            StateInstance instance = _states[stateId];
-            _stack.Push(instance);
-
-            SetOwnerDelegates(null, instance);
-            VerifyOnEnterArguments(instance, args);
-            instance.State.OnEnter(args);
-        }
-
         public StateInstance AddState(StateId stateId, State state) {
             if (_states.ContainsKey(stateId)) {
                 throw new ArgumentException(string.Format("StateId {0} is already registered.", stateId));
@@ -83,13 +64,21 @@ namespace RamjetAnvil.Unity.Utils {
             return instance;
         }
 
-        public void Transition(StateId stateId, IDictionary<string, object> args) {
+        public void Start(StateId stateId, params object[] args) {
+            StateInstance instance = _states[stateId];
+            _stack.Push(instance);
+
+            SetOwnerDelegates(null, instance);
+            instance.Enter(args);
+        }
+
+        public void Transition(StateId stateId, params object[] args) {
             var oldState = _stack.Peek();
 
             var isNormalTransition = oldState.Transitions.Contains(stateId);
             var isChildTransition = !isNormalTransition && oldState.ChildTransitions.Contains(stateId);
             if (isNormalTransition) {
-                oldState.State.OnExit();
+                oldState.Exit();
                 _stack.Pop();
             } else if (isChildTransition) {
 
@@ -101,8 +90,7 @@ namespace RamjetAnvil.Unity.Utils {
             _stack.Push(newState);
 
             SetOwnerDelegates(oldState, newState);
-            VerifyOnEnterArguments(newState, args);
-            newState.State.OnEnter(args);
+            newState.Enter(args);
         }
 
         public void TransitionToParent() {
@@ -110,19 +98,7 @@ namespace RamjetAnvil.Unity.Utils {
                 throw new InvalidOperationException("Cannot transition to parent state, currently at top-level state");
             }
 
-            _stack.Pop().State.OnExit();
-        }
-
-        private void VerifyOnEnterArguments(StateInstance instance, IDictionary<string, object> args) {
-            var requiredArgs = GetOnEnterArguments(instance.State);
-            foreach (var pair in requiredArgs) {
-                if (!args.ContainsKey(pair.Key)) {
-                    throw new ArgumentException(string.Format("Required OnEnter argument '{0}' is missing", pair.Key));
-                }
-                if (pair.Value != args[pair.Key].GetType()) {
-                    throw new ArgumentException(string.Format("Required OnEnter argument '{0}' is of wrong type. Expected: {1}", pair.Key, pair.Value));
-                }
-            }
+            _stack.Pop().Exit();
         }
 
         private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
@@ -162,22 +138,6 @@ namespace RamjetAnvil.Unity.Utils {
             }
 
             return implementedMethods;
-        }
-
-        private static IDictionary<string, Type> GetOnEnterArguments(State state) {
-            var arguments = new Dictionary<string, Type>();
-
-            Type type = state.GetType();
-
-            var method = type.GetMethod("OnEnter");
-            if (method != null) {
-                foreach (var a in method.GetCustomAttributes(typeof(RequiredArgument), false)) {
-                    var attribute = (RequiredArgument) a;
-                    arguments.Add(attribute.Name, attribute.Type);
-                }
-            }
-
-            return arguments;
         }
 
         private void SetOwnerDelegates(StateInstance oldState, StateInstance newState) {
@@ -236,6 +196,8 @@ namespace RamjetAnvil.Unity.Utils {
     /// </summary>
     public class StateInstance { 
         private readonly State _state;
+        private readonly Delegate _onEnter;
+        private readonly Delegate _onExit;
         private readonly IDictionary<string, Delegate> _stateDelegates;
 
         public StateInstance(StateId stateId, State state, IDictionary<string, Delegate> stateDelegates) {
@@ -245,6 +207,9 @@ namespace RamjetAnvil.Unity.Utils {
 
             Transitions = new List<StateId>();
             ChildTransitions = new List<StateId>();
+
+            _onEnter = GetDelegateByName(State, "OnEnter");
+            _onExit = GetDelegateByName(State, "OnExit");
         }
 
         public StateId StateId { get; private set; }
@@ -269,6 +234,52 @@ namespace RamjetAnvil.Unity.Utils {
             ChildTransitions.Add(stateId);
             return this;
         }
+
+        public void Enter(params object[] args) {
+            if (_onEnter == null) {
+                return;
+            }
+
+            try {
+                _onEnter.DynamicInvoke(args);
+            } catch (TargetParameterCountException e) {
+                var expectedArgs = _onEnter.Method.GetParameters();
+
+                string expectedArgTypes = "";
+                for (int i = 0; i < expectedArgs.Length; i++) {
+                    expectedArgTypes += expectedArgs[i].ParameterType.Name + (i < expectedArgs.Length - 1 ? ", " : "");
+                }
+
+                string receivedArgTypes = "";
+                for (int i = 0; i < args.Length; i++) {
+                    receivedArgTypes += args[i].GetType().Name + (i < args.Length - 1 ? ", " : "");
+                }
+
+                throw new ArgumentException(
+                    string.Format("Wrong arguments for transition to state '{0}', expected: {1}; received: {2}",
+                    State.GetType(),
+                    expectedArgTypes,
+                    receivedArgTypes));
+            }
+        }
+
+        public void Exit() {
+            if (_onEnter == null) {
+                return;
+            }
+
+            _onExit.DynamicInvoke();
+        }
+
+        private static Delegate GetDelegateByName(State state, string name) {
+            Type type = state.GetType();
+
+            var method = type.GetMethod(name);
+            if (method != null) {
+                return ReflectionUtils.ToDelegate(method, state);
+            }
+            return null;
+        }
     }
 
     
@@ -277,6 +288,9 @@ namespace RamjetAnvil.Unity.Utils {
      * Maybe make State<T, U, V> overloads, which define arguments passed into OnEnter, or try 
      * a reflection approach similar to the StateMethod linking.
      * 
+     * What if we let OnEnter implementations specify arbitrary arguments, and them let the machine
+     * try to match them from given params?
+     * 
      * A readable runtime argument exception is better than a random failure somewhere down the line. 
      */
 
@@ -284,12 +298,6 @@ namespace RamjetAnvil.Unity.Utils {
         protected IStateMachine Machine { get; private set; }
         public State(IStateMachine machine) {
             Machine = machine;
-        }
-
-        public virtual void OnEnter(IDictionary<string, object> data) {
-        }
-
-        public virtual void OnExit() {
         }
     }
 
