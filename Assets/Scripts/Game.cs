@@ -1,4 +1,5 @@
 ﻿using System;
+using System.CodeDom;
 using System.Collections.Generic;
 using RamjetAnvil.Unity.Utils;
 using UnityEngine;
@@ -36,7 +37,8 @@ public class Game : MonoBehaviour {
             .Permit(States.StartScreen)
             .Permit(States.ScoreScreen);
 
-        _machine.AddState(States.ScoreScreen, new ScoreScreen(_machine));
+        _machine.AddState(States.ScoreScreen, new ScoreScreen(_machine))
+            .Permit(States.StartScreen);
 
         _machine.Start(States.StartScreen, null);
     }
@@ -66,7 +68,7 @@ public class Game : MonoBehaviour {
             for (int i = 0; i < _inputs.Count; i++) {
                 var input = _inputs[i];
                 if (input.AnyKeyDown()) {
-                    Machine.Transition(States.InGame, new Dictionary<string, object> { { "input", input} } );
+                    Machine.Transition(States.InGame, new Dictionary<string, object> { { "input", 1 } });
                 }
             }
         }
@@ -86,6 +88,7 @@ public class Game : MonoBehaviour {
             _enemies = new List<Character>();
         }
 
+        [OnEnterArgument("input", typeof(PlayerInputDevice))]
         public override void OnEnter(IDictionary<string, object> data) {
             var playerInput = (PlayerInputDevice) data["input"];
 
@@ -144,8 +147,14 @@ public class Game : MonoBehaviour {
     private class ScoreScreen : State {
         public ScoreScreen(IStateMachine machine) : base(machine) {}
 
+        [OnEnterArgument("score", typeof(int))]
+        [OnEnterArgument("input", typeof(PlayerInputDevice))]
         public override void OnEnter(IDictionary<string, object> data) {
             Debug.Log("====== Score: " + data["score"] + " ======");
+            var input = (PlayerInputDevice)data["input"];
+            if (input.AnyKeyDown()) {
+                Machine.Transition(States.StartScreen, null);
+            }
         }
     }
 
