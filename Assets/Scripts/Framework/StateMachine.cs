@@ -12,23 +12,26 @@ using UnityEngine;
  * 
  * Event propagation (damage dealing and handling with complex hierarchies is a good one)
  * Timed, cancelable transitions (camera motions are a good one)
+ * Test more intricate parent->child relationships, callable states
  */
-namespace RamjetAnvil.Unity.Utils {
 
-    /*
-   * {in-spawnpoint-menu: {transitions: [in-game]
-   *                       child-transitions: [in-options-menu]}
-   *  in-game:            {transitions: [in-spawnpoint-menu]
-   *                       child-transitions: [in-options-menu]}
-   *  in-options-menu     {transitions: [in-spawnpoint-menu in-game in-couse-editor]}
-   *  in-course-editor    {child-transitions: [in-game, in-options-menu]
-   *  in-spectator        {child-transitions: [in-options-menu]}
-   * }         
-   * 
-   */
+/*
+ * Desired state machine declaration style:
+ * 
+ * {in-spawnpoint-menu: {transitions: [in-game]
+ *                       child-transitions: [in-options-menu]}
+ *  in-game:            {transitions: [in-spawnpoint-menu]
+ *                       child-transitions: [in-options-menu]}
+ *  in-options-menu     {transitions: [in-spawnpoint-menu in-game in-couse-editor]}
+ *  in-course-editor    {child-transitions: [in-game, in-options-menu]
+ *  in-spectator        {child-transitions: [in-options-menu]}
+ * }         
+ * 
+ */
 
+namespace RamjetAnvil.StateMachine {
     [AttributeUsage(AttributeTargets.Method)]
-    public class StateMethodAttribute : Attribute { }
+    public class StateMethodAttribute : Attribute {}
 
     public interface IStateMachine {
         void Transition(StateId stateId, params object[] args);
@@ -50,7 +53,7 @@ namespace RamjetAnvil.Unity.Utils {
             _stack = new IteratableStack<StateInstance>();
 
             Type type = typeof (T);
-            _ownerMethods = GetMethodsWithAttribute(typeof(T), typeof(StateMethodAttribute));
+            _ownerMethods = GetMethodsWithAttribute(typeof (T), typeof (StateMethodAttribute));
             _ownerEvents = GetMatchingOwnerEvents(type, _ownerMethods);
         }
 
@@ -68,7 +71,7 @@ namespace RamjetAnvil.Unity.Utils {
             StateInstance instance = _states[stateId];
             _stack.Push(instance);
 
-            SetOwnerDelegates(null, instance);
+            SubscribeToStateMethods(null, instance);
             instance.Enter(args);
         }
 
@@ -80,16 +83,17 @@ namespace RamjetAnvil.Unity.Utils {
             if (isNormalTransition) {
                 oldState.Exit();
                 _stack.Pop();
-            } else if (isChildTransition) {
-
-            } else {
-                throw new Exception(string.Format("Transition to state '{0}' is not registered, transition failed", stateId));
+            }
+            else if (isChildTransition) {}
+            else {
+                throw new Exception(string.Format("Transition to state '{0}' is not registered, transition failed",
+                    stateId));
             }
 
             var newState = _states[stateId];
             _stack.Push(newState);
 
-            SetOwnerDelegates(oldState, newState);
+            SubscribeToStateMethods(oldState, newState);
             newState.Enter(args);
         }
 
@@ -100,7 +104,7 @@ namespace RamjetAnvil.Unity.Utils {
 
             var oldState = _stack.Pop();
             oldState.Exit();
-            SetOwnerDelegates(oldState, _stack.Peek());
+            SubscribeToStateMethods(oldState, _stack.Peek());
         }
 
         private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
@@ -124,7 +128,8 @@ namespace RamjetAnvil.Unity.Utils {
             return stateEvents;
         }
 
-        private static IDictionary<string, Delegate> GetImplementedStateMethods(State state, IEnumerable<MethodInfo> ownerMethods) {
+        private static IDictionary<string, Delegate> GetImplementedStateMethods(State state,
+            IEnumerable<MethodInfo> ownerMethods) {
             var implementedMethods = new Dictionary<string, Delegate>();
 
             Type type = state.GetType();
@@ -142,11 +147,14 @@ namespace RamjetAnvil.Unity.Utils {
             return implementedMethods;
         }
 
-        private void SetOwnerDelegates(StateInstance oldState, StateInstance newState) {
+        private void SubscribeToStateMethods(StateInstance oldState, StateInstance newState) {
+            // Todo: is there an easier way to clear the list of subscribers?
             foreach (var pair in _ownerEvents) {
+                // Unregister delegates of the old state
                 if (oldState != null && oldState.StateDelegates.ContainsKey(pair.Key)) {
                     pair.Value.RemoveEventHandler(_owner, oldState.StateDelegates[pair.Key]);
                 }
+                // Register delegates of the new state
                 if (newState.StateDelegates.ContainsKey(pair.Key)) {
                     pair.Value.AddEventHandler(_owner, newState.StateDelegates[pair.Key]);
                 }
@@ -196,7 +204,8 @@ namespace RamjetAnvil.Unity.Utils {
     /// <summary>
     /// A state, plus metadata, which lives in the machine's stack
     /// </summary>
-    public class StateInstance { 
+    /// Todo: only expose Permit interface to user, not the list of delegates etc.
+    public class StateInstance {
         private readonly State _state;
         private readonly Delegate _onEnter;
         private readonly Delegate _onExit;
@@ -244,7 +253,8 @@ namespace RamjetAnvil.Unity.Utils {
 
             try {
                 _onEnter.DynamicInvoke(args);
-            } catch (TargetParameterCountException e) {
+            }
+            catch (TargetParameterCountException e) {
                 Debug.LogException(e);
                 throw new ArgumentException(GetArgumentExceptionDetails(args));
             }
@@ -291,58 +301,9 @@ namespace RamjetAnvil.Unity.Utils {
 
     public class State {
         protected IStateMachine Machine { get; private set; }
+
         public State(IStateMachine machine) {
             Machine = machine;
-        }
-    }
-
-    public class IteratableStack<T> {
-        private IList<T> _stack;
-
-        public int Count {
-            get { return _stack.Count; }
-        }
-
-        public IteratableStack() {
-            _stack = new List<T>();
-        }
-
-        public IteratableStack(int capacity) {
-            _stack = new List<T>(capacity);
-        }
-
-        public IteratableStack(IEnumerable<T> collection) {
-            _stack = new List<T>(collection);
-        }
-
-        public void Clear() {
-            _stack.Clear();
-        }
-
-        public bool Contains(T item) {
-            return _stack.Contains(item);
-        }
-
-        public T Peek() {
-            return _stack[LastIndex()];
-        }
-
-        public T Pop() {
-            var removed = _stack[LastIndex()];
-            _stack.RemoveAt(LastIndex());
-            return removed;
-        }
-
-        public void Push(T item) {
-            _stack.Add(item);
-        }
-
-        public T this[int i] {
-            get { return _stack[i]; }
-        }
-
-        private int LastIndex() {
-            return _stack.Count - 1;
         }
     }
 }

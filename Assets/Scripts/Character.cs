@@ -1,5 +1,4 @@
-﻿using RamjetAnvil.Unity.Utils;
-using UnityEngine;
+﻿using UnityEngine;
 
 [RequireComponent(typeof(Health))]
 public class Character : MonoBehaviour {
@@ -9,7 +8,6 @@ public class Character : MonoBehaviour {
 
     private Health _health;
     private CharacterInput _input;
-    //private StateMachine _machine;
 
     public float WalkSpeed {
         get { return _walkSpeed; }
@@ -27,14 +25,6 @@ public class Character : MonoBehaviour {
             Destroy(gameObject);
         };
     }
-
-    //private void Start() {
-    //    var machineConfig = new StateMachineConfig();
-    //    machineConfig.AddState(States.Alive, typeof(Alive))
-    //        .Permit(States.Dead);
-    //    machineConfig.AddState(States.Dead, typeof(Dead));
-    //    machineConfig.Build(this);
-    //}
 
     void Update() {
         transform.Translate(new Vector3(_input.Walk.x, _input.Walk.y, 0f) * Time.deltaTime * _walkSpeed, Space.World);
@@ -55,39 +45,6 @@ public class Character : MonoBehaviour {
         input.Look.Normalize();
         _input = input;
     }
-
-    //public static class States {
-    //    public static readonly StateId Alive = new StateId("Alive");
-    //    public static readonly StateId Dead = new StateId("Dead");
-    //}
-
-    //private class Alive : IState {
-    //    public void OnEnter(StateMachine machine, object data) {
-            
-    //    }
-
-    //    /* Todo: we want to do all the things a monobehaviour can do here
-    //     * 
-    //     * Update
-    //     * OnCollision
-    //     * Etc.
-    //     */
-
-
-    //    public void OnExit() {
-
-    //    }
-    //}
-
-    //private class Dead : IState {
-    //    public void OnEnter(StateMachine machine, object data) {
-
-    //    }
-
-    //    public void OnExit() {
-
-    //    }
-    //}
 }
 
 public struct CharacterInput {

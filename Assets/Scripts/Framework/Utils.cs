@@ -45,3 +45,53 @@ public static class ReflectionUtils {
         return result;
     }
 }
+
+public class IteratableStack<T> {
+    private IList<T> _stack;
+
+    public int Count {
+        get { return _stack.Count; }
+    }
+
+    public IteratableStack() {
+        _stack = new List<T>();
+    }
+
+    public IteratableStack(int capacity) {
+        _stack = new List<T>(capacity);
+    }
+
+    public IteratableStack(IEnumerable<T> collection) {
+        _stack = new List<T>(collection);
+    }
+
+    public void Clear() {
+        _stack.Clear();
+    }
+
+    public bool Contains(T item) {
+        return _stack.Contains(item);
+    }
+
+    public T Peek() {
+        return _stack[LastIndex()];
+    }
+
+    public T Pop() {
+        var removed = _stack[LastIndex()];
+        _stack.RemoveAt(LastIndex());
+        return removed;
+    }
+
+    public void Push(T item) {
+        _stack.Add(item);
+    }
+
+    public T this[int i] {
+        get { return _stack[i]; }
+    }
+
+    private int LastIndex() {
+        return _stack.Count - 1;
+    }
+}
