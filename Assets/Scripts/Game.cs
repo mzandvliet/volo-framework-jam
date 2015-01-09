@@ -42,7 +42,7 @@ public class Game : MonoBehaviour {
         _machine.AddState(States.ScoreScreen, new ScoreScreen(_machine))
             .Permit(States.StartScreen);
 
-        _machine.Start(States.StartScreen);
+        _machine.Transition(States.StartScreen);
     }
 
     #region State Methods

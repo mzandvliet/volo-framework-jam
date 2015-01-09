@@ -67,30 +67,30 @@ namespace RamjetAnvil.StateMachine {
             return instance;
         }
 
-        public void Start(StateId stateId, params object[] args) {
-            StateInstance instance = _states[stateId];
-            _stack.Push(instance);
-
-            SubscribeToStateMethods(null, instance);
-            instance.Enter(args);
-        }
-
         public void Transition(StateId stateId, params object[] args) {
-            var oldState = _stack.Peek();
+            StateInstance oldState = null;
+            StateInstance newState = _states[stateId];
 
-            var isNormalTransition = oldState.Transitions.Contains(stateId);
-            var isChildTransition = !isNormalTransition && oldState.ChildTransitions.Contains(stateId);
-            if (isNormalTransition) {
+            if (_stack.Count > 0) {
+                oldState = _stack.Peek();
+
+                var isNormalTransition = oldState.Transitions.Contains(stateId);
+                var isChildTransition = !isNormalTransition && oldState.ChildTransitions.Contains(stateId);
+
+                if (!isNormalTransition && !isChildTransition) {
+                    throw new Exception(string.Format(
+                        "Transition from state '{0}' to state '{1}' is not registered, transition failed",
+                        oldState.StateId,
+                        stateId));
+                }
+
                 oldState.Exit();
-                _stack.Pop();
-            }
-            else if (isChildTransition) {}
-            else {
-                throw new Exception(string.Format("Transition to state '{0}' is not registered, transition failed",
-                    stateId));
+
+                if (isNormalTransition) {
+                    _stack.Pop();
+                }
             }
 
-            var newState = _states[stateId];
             _stack.Push(newState);
 
             SubscribeToStateMethods(oldState, newState);
