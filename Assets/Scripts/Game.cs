@@ -22,9 +22,9 @@ using UnityEngine;
 public class Game : MonoBehaviour {
     [SerializeField] private GameObject _characterPrefab;
     [SerializeField] private GameObject _projectilePrefab;
-    [SerializeField] private Camera _playerCamera;
-    [SerializeField] private Transform _cameraPositionA;
-    [SerializeField] private Transform _cameraPositionB;
+    [SerializeField] private Camera _camera;
+    [SerializeField] private Transform _cameraPositionStartScreen;
+    [SerializeField] private Transform _cameraPositionGame;
     
     public static class States {
         public static readonly StateId StartScreen = new StateId("StartScreen");
@@ -42,10 +42,10 @@ public class Game : MonoBehaviour {
         _scheduler = new CoroutineScheduler();
         _machine = new StateMachine<Game>(this, _scheduler);
 
-        _machine.AddState(States.StartScreen, new StartScreen(_machine, inputDevices, _cameraPositionA, _cameraPositionB, _playerCamera))
+        _machine.AddState(States.StartScreen, new StartScreen(_machine, inputDevices, _cameraPositionStartScreen, _camera))
             .Permit(States.InGame);
 
-        _machine.AddState(States.InGame, new InGame(_machine, _characterPrefab, _playerCamera))
+        _machine.AddState(States.InGame, new InGame(_machine, _characterPrefab, _cameraPositionGame, _camera))
             .Permit(States.ScoreScreen)
             .PermitChild(States.InGame_Paused);
 
@@ -83,27 +83,24 @@ public class Game : MonoBehaviour {
 
     private class StartScreen : State {
         private IList<PlayerInputDevice> _inputs;
-        private Transform _camA;
-        private Transform _camB;
+        private Transform _camPos;
         private Camera _cam;
 
-        public StartScreen(IStateMachine machine, IList<PlayerInputDevice> inputs, Transform camA, Transform camB, Camera cam) : base(machine) {
+        public StartScreen(IStateMachine machine, IList<PlayerInputDevice> inputs, Transform camPos, Camera cam) : base(machine) {
             _inputs = inputs;
-            _camA = camA;
-            _camB = camB;
+            _camPos = camPos;
             _cam = cam;
         }
 
-        private void OnEnter() {
-            _cam.transform.position = _camA.position;
-            _cam.transform.rotation = _camA.rotation;
+        private IEnumerator OnEnter() {
+            return Transitions.Transition(_cam, _camPos);
         }
 
         private void Update() {
             for (int i = 0; i < _inputs.Count; i++) {
                 var input = _inputs[i];
                 if (input.AnyKeyDown()) {
-                    Machine.TransitionOverTime(States.InGame, Transitions.Transition(_cam, _camB), input);
+                    Machine.Transition(States.InGame, input);
                 }
             }
         }
@@ -116,6 +113,7 @@ public class Game : MonoBehaviour {
     private class InGame : State {
         private GameObject _characterPrefab;
         private Camera _camera;
+        private Transform _camPos;
         private PlayerInputDevice _input;
         private Character _player;
         private IList<Character> _enemies;
@@ -123,17 +121,20 @@ public class Game : MonoBehaviour {
         private float _startTime;
         private int _score;
 
-        public InGame(IStateMachine machine, GameObject characterPrefab, Camera camera) : base(machine) {
+        public InGame(IStateMachine machine, GameObject characterPrefab, Transform camPos, Camera camera) : base(machine) {
             _characterPrefab = characterPrefab;
             _camera = camera;
+            _camPos = camPos;
             _enemies = new List<Character>();
         }
 
-        private void OnEnter(PlayerInputDevice input) {
+        IEnumerator OnEnter(PlayerInputDevice input) {
             _input = input;
             _startTime = Time.time;
             _score = 0;
-            
+
+            yield return Machine.Scheduler.Start(Transitions.Transition(_camera, _camPos));
+
             SpawnPlayer(input);
             SpawnEnemies();
         }

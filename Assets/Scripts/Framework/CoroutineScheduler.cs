@@ -9,7 +9,7 @@ public class CoroutineScheduler {
         _routines = new LinkedList<Routine>();
     }
 
-    public Routine StartCoroutine(IEnumerator fibre) {
+    public Routine Start(IEnumerator fibre) {
         if (fibre == null) {
             return null;
         }
@@ -58,8 +58,9 @@ public class CoroutineScheduler {
                 coroutine.WaitForTime += time;
             } else if (yieldType == typeof (Routine)) {
                 coroutine.WaitForCoroutine = (Routine) yieldCommand;
-            } else {
-                throw new System.ArgumentException("CoroutineScheduler: Unexpected coroutine yield type: " + yieldType);
+            }
+            else {
+                throw new ArgumentException("CoroutineScheduler: Unexpected coroutine yield type: " + yieldType);
             }
         } else {
             coroutine.Finished = true;

@@ -6,12 +6,12 @@ public class Coroutines : MonoBehaviour {
 
 	void Start () {
         _scheduler = new CoroutineScheduler();
-	    _scheduler.StartCoroutine(WaitAndPrint());
+	    _scheduler.Start(WaitAndPrint());
 	}
 
     IEnumerator WaitAndPrint() {
         Debug.Log("Start");
-        yield return _scheduler.StartCoroutine(Wait());
+        yield return _scheduler.Start(Wait());
         Debug.Log("End");
     }
 

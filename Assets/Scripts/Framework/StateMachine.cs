@@ -37,8 +37,9 @@ namespace RamjetAnvil.StateMachine {
     public class StateMethodAttribute : Attribute {}
 
     public interface IStateMachine {
+        CoroutineScheduler Scheduler { get; }
+
         void Transition(StateId stateId, params object[] args);
-        void TransitionOverTime(StateId stateId, IEnumerator routine, params object[] args);
         void TransitionToParent();
     }
 
@@ -50,6 +51,10 @@ namespace RamjetAnvil.StateMachine {
 
         private readonly IList<MethodInfo> _ownerMethods;
         private readonly IDictionary<string, EventInfo> _ownerEvents;
+
+        public CoroutineScheduler Scheduler {
+            get { return _scheduler; }
+        }
 
         public StateMachine(T owner, CoroutineScheduler scheduler) {
             _owner = owner;
@@ -90,7 +95,7 @@ namespace RamjetAnvil.StateMachine {
                         stateId));
                 }
 
-                oldState.Exit();
+                CallStateLifeCycleMethod(oldState.OnExit);
 
                 if (isNormalTransition) {
                     _stack.Pop();
@@ -99,16 +104,7 @@ namespace RamjetAnvil.StateMachine {
 
             _stack.Push(newState);
             SubscribeToStateMethods(oldState, newState);
-            newState.Enter(args);
-        }
-
-        public void TransitionOverTime(StateId stateId, IEnumerator routine, params object[] args) {
-            _scheduler.StartCoroutine(RunRoutineAndTransition(stateId, routine, args));
-        }
-
-        private IEnumerator RunRoutineAndTransition(StateId stateId, IEnumerator routine, params object[] args) {
-            yield return _scheduler.StartCoroutine(routine);
-            Transition(stateId, args);
+            CallStateLifeCycleMethod(newState.OnEnter, args);
         }
 
         public void TransitionToParent() {
@@ -117,7 +113,7 @@ namespace RamjetAnvil.StateMachine {
             }
 
             var oldState = _stack.Pop();
-            oldState.Exit();
+            CallStateLifeCycleMethod(oldState.OnExit);
             SubscribeToStateMethods(oldState, _stack.Peek());
         }
 
@@ -174,6 +170,41 @@ namespace RamjetAnvil.StateMachine {
                 }
             }
         }
+
+        public void CallStateLifeCycleMethod(Delegate del, params object[] args) {
+            if (del == null) {
+                return;
+            }
+
+            try {
+                if (del.Method.ReturnType == typeof(IEnumerator)) {
+                    _scheduler.Start((IEnumerator)del.DynamicInvoke(args));
+                } else {
+                    del.DynamicInvoke(args);
+                }
+            } catch (TargetParameterCountException e) {
+                Debug.LogException(e);
+                throw new ArgumentException(GetArgumentExceptionDetails((State)del.Target, del, args));
+            }
+        }
+
+        private string GetArgumentExceptionDetails(State state, Delegate del, params object[] args) {
+            var expectedArgs = del.Method.GetParameters();
+            string expectedArgTypes = "";
+            for (int i = 0; i < expectedArgs.Length; i++) {
+                expectedArgTypes += expectedArgs[i].ParameterType.Name + (i < expectedArgs.Length - 1 ? ", " : "");
+            }
+
+            string receivedArgTypes = "";
+            for (int i = 0; i < args.Length; i++) {
+                receivedArgTypes += args[i].GetType().Name + (i < args.Length - 1 ? ", " : "");
+            }
+            return String.Format(
+                "Wrong arguments for transition to state '{0}', expected: {1}; received: {2}",
+                state.GetType(),
+                expectedArgTypes,
+                receivedArgTypes);
+        }
     }
 
     public struct StateId {
@@ -225,6 +256,14 @@ namespace RamjetAnvil.StateMachine {
         private readonly Delegate _onExit;
         private readonly IDictionary<string, Delegate> _stateDelegates;
 
+        public Delegate OnEnter {
+            get { return _onEnter; }
+        }
+
+        public Delegate OnExit {
+            get { return _onExit; }
+        }
+
         public StateInstance(StateId stateId, State state, IDictionary<string, Delegate> stateDelegates) {
             StateId = stateId;
             _state = state;
@@ -258,46 +297,6 @@ namespace RamjetAnvil.StateMachine {
         public StateInstance PermitChild(StateId stateId) {
             ChildTransitions.Add(stateId);
             return this;
-        }
-
-        public void Enter(params object[] args) {
-            if (_onEnter == null) {
-                return;
-            }
-
-            try {
-                _onEnter.DynamicInvoke(args);
-            }
-            catch (TargetParameterCountException e) {
-                Debug.LogException(e);
-                throw new ArgumentException(GetArgumentExceptionDetails(args));
-            }
-        }
-
-        private string GetArgumentExceptionDetails(params object[] args) {
-            var expectedArgs = _onEnter.Method.GetParameters();
-            string expectedArgTypes = "";
-            for (int i = 0; i < expectedArgs.Length; i++) {
-                expectedArgTypes += expectedArgs[i].ParameterType.Name + (i < expectedArgs.Length - 1 ? ", " : "");
-            }
-
-            string receivedArgTypes = "";
-            for (int i = 0; i < args.Length; i++) {
-                receivedArgTypes += args[i].GetType().Name + (i < args.Length - 1 ? ", " : "");
-            }
-            return String.Format(
-                "Wrong arguments for transition to state '{0}', expected: {1}; received: {2}",
-                State.GetType(),
-                expectedArgTypes,
-                receivedArgTypes);
-        }
-
-        public void Exit() {
-            if (_onExit == null) {
-                return;
-            }
-
-            _onExit.DynamicInvoke();
         }
 
         private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
