@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using RamjetAnvil.StateMachine;
 using UnityEngine;
@@ -9,12 +10,21 @@ using UnityEngine;
  * - Different levels
  * - Different gametypes
  * - Player, enemies
+ * 
+ * - Make a complex enemy, with multiple objects, and a weak point. This forces you to think about events as they happen
+ * in hierarchies.
+ * 
+ * 
+ * We can model a timed transition as a state. Camera transition is an interesting one.
+ * Instead of saying a transition *is* a camera transition, we could say a transition could use a camera transition.
  */
 
 public class Game : MonoBehaviour {
     [SerializeField] private GameObject _characterPrefab;
     [SerializeField] private GameObject _projectilePrefab;
     [SerializeField] private Camera _playerCamera;
+    [SerializeField] private Transform _cameraPositionA;
+    [SerializeField] private Transform _cameraPositionB;
     
     public static class States {
         public static readonly StateId StartScreen = new StateId("StartScreen");
@@ -23,14 +33,16 @@ public class Game : MonoBehaviour {
         public static readonly StateId ScoreScreen = new StateId("ScoreScreen");
     }
 
+    private CoroutineScheduler _scheduler;
     private StateMachine<Game> _machine;
 
     private void Start() {
         var inputDevices = new[] {new PlayerInputDevice()};
 
-        _machine = new StateMachine<Game>(this);
+        _scheduler = new CoroutineScheduler();
+        _machine = new StateMachine<Game>(this, _scheduler);
 
-        _machine.AddState(States.StartScreen, new StartScreen(_machine, inputDevices))
+        _machine.AddState(States.StartScreen, new StartScreen(_machine, inputDevices, _cameraPositionA, _cameraPositionB, _playerCamera))
             .Permit(States.InGame);
 
         _machine.AddState(States.InGame, new InGame(_machine, _characterPrefab, _playerCamera))
@@ -50,6 +62,8 @@ public class Game : MonoBehaviour {
     public event Action OnUpdate; 
     [StateMethod]
     private void Update() {
+        _scheduler.Update(Time.frameCount, Time.time);
+
         if (OnUpdate != null) {
             OnUpdate();
         }
@@ -69,16 +83,27 @@ public class Game : MonoBehaviour {
 
     private class StartScreen : State {
         private IList<PlayerInputDevice> _inputs;
+        private Transform _camA;
+        private Transform _camB;
+        private Camera _cam;
 
-        public StartScreen(IStateMachine machine, IList<PlayerInputDevice> inputs) : base(machine) {
+        public StartScreen(IStateMachine machine, IList<PlayerInputDevice> inputs, Transform camA, Transform camB, Camera cam) : base(machine) {
             _inputs = inputs;
+            _camA = camA;
+            _camB = camB;
+            _cam = cam;
+        }
+
+        private void OnEnter() {
+            _cam.transform.position = _camA.position;
+            _cam.transform.rotation = _camA.rotation;
         }
 
         private void Update() {
             for (int i = 0; i < _inputs.Count; i++) {
                 var input = _inputs[i];
                 if (input.AnyKeyDown()) {
-                    Machine.Transition(States.InGame, input);
+                    Machine.TransitionOverTime(States.InGame, Transitions.Transition(_cam, _camB), input);
                 }
             }
         }
@@ -156,12 +181,12 @@ public class Game : MonoBehaviour {
         }
 
         private void Update() {
-            if (Time.time - _startTime > 30f) {
-                Machine.Transition(States.ScoreScreen, 1234, _input);
-            }
-
             if (_input.GetKeyDown(KeyCode.Escape)) {
                 Machine.Transition(States.InGame_Paused, _input);
+            }
+
+            if (Time.time - _startTime > 30f) {
+                Machine.Transition(States.ScoreScreen, 1234, _input);
             }
         }
 
@@ -224,6 +249,30 @@ public class Game : MonoBehaviour {
 
         private void OnGUI() {
             GUI.Label(new Rect(Screen.width * 0.5f, Screen.height * 0.5f, 200f, 50f), "====== Score: " + _score + " ======");
+        }
+    }
+
+    #endregion
+
+    #region Transitions
+
+    public static class Transitions {
+        public static IEnumerator Transition(Camera camera, Transform target) {
+            const float duration = 1f;
+
+            Vector3 originalPosition = camera.transform.position;
+            Quaternion originalRotation = camera.transform.rotation;
+
+            float time = 0f;
+            while (time < duration) {
+                float lerp = time/duration;
+                camera.transform.position = Vector3.Lerp(originalPosition, target.position, lerp);
+                camera.transform.rotation = Quaternion.Lerp(originalRotation, target.rotation, lerp);
+                time += Time.deltaTime;
+                yield return 0;
+            }
+            camera.transform.position = target.position;
+            camera.transform.rotation = target.rotation;
         }
     }
 

@@ -1,5 +1,4 @@
 ﻿using UnityEngine;
-using System.Collections;
 
 public class Projectile : MonoBehaviour {
     [SerializeField] private float _speed = 1f;
@@ -14,7 +13,15 @@ public class Projectile : MonoBehaviour {
 	}
 
     void OnTriggerEnter(Collider other) {
-        var health = other.GetComponent<Health>(); // Todo: How do we message this if health component is not on the thing we hit?
+        /*
+         * Todo: How do we message this if health component is not on the thing we hit?
+         * 
+         * We don't know which component might want to handle the damage event, unless we enforce
+         * the requirement of having a health component to catch it first.
+         * 
+         */
+
+        var health = other.GetComponent<Health>();
         if (health) {
             health.Damage(_damage);
         }

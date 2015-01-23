@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
@@ -13,6 +14,8 @@ using UnityEngine;
  * Event propagation (damage dealing and handling with complex hierarchies is a good one)
  * Timed, cancelable transitions (camera motions are a good one)
  * Test more intricate parent->child relationships, callable states
+ * 
+ * Enable OnEnter and OnExit to be implemented as optional, cancelable coroutines.
  */
 
 /*
@@ -35,19 +38,22 @@ namespace RamjetAnvil.StateMachine {
 
     public interface IStateMachine {
         void Transition(StateId stateId, params object[] args);
+        void TransitionOverTime(StateId stateId, IEnumerator routine, params object[] args);
         void TransitionToParent();
     }
 
     public class StateMachine<T> : IStateMachine {
         private readonly T _owner;
+        private readonly CoroutineScheduler _scheduler;
         private readonly IDictionary<StateId, StateInstance> _states;
         private readonly IteratableStack<StateInstance> _stack;
 
         private readonly IList<MethodInfo> _ownerMethods;
         private readonly IDictionary<string, EventInfo> _ownerEvents;
 
-        public StateMachine(T owner) {
+        public StateMachine(T owner, CoroutineScheduler scheduler) {
             _owner = owner;
+            _scheduler = scheduler;
 
             _states = new Dictionary<StateId, StateInstance>();
             _stack = new IteratableStack<StateInstance>();
@@ -92,9 +98,17 @@ namespace RamjetAnvil.StateMachine {
             }
 
             _stack.Push(newState);
-
             SubscribeToStateMethods(oldState, newState);
             newState.Enter(args);
+        }
+
+        public void TransitionOverTime(StateId stateId, IEnumerator routine, params object[] args) {
+            _scheduler.StartCoroutine(RunRoutineAndTransition(stateId, routine, args));
+        }
+
+        private IEnumerator RunRoutineAndTransition(StateId stateId, IEnumerator routine, params object[] args) {
+            yield return _scheduler.StartCoroutine(routine);
+            Transition(stateId, args);
         }
 
         public void TransitionToParent() {
