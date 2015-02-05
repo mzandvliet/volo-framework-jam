@@ -1,84 +1,129 @@
 ﻿using System;
 using System.Collections;
-
 /* Based on this, but prettified slightly: http://wiki.unity3d.com/index.php?title=CoroutineScheduler
  */
-public class CoroutineScheduler {
-    private LinkedList<Routine> _routines;
+using System.Collections.Generic;
 
-    public CoroutineScheduler() {
-        _routines = new LinkedList<Routine>();
-    }
+namespace RamjetAnvil.StateMachine {
+    public class CoroutineScheduler {
+        private IList<Routine> _routines;
 
-    public Routine Start(IEnumerator fibre) {
-        if (fibre == null) {
-            return null;
+        public CoroutineScheduler() {
+            _routines = new List<Routine>();
         }
 
-        Routine coroutine = new Routine(fibre);
-        _routines.Add(coroutine);
-        return coroutine;
-    }
-
-    public void Update(int frame, float time) {
-        var node = _routines.First;
-        while (node != null) {
-            var nextNode = node.Next;
-
-            var routine = node.Value;
-            if (routine.WaitForFrame > 0 && frame >= routine.WaitForFrame) {
-                routine.WaitForFrame = -1;
-                UpdateCoroutine(node.Value, frame, time);
-            } else if (routine.WaitForTime > 0f && time >= routine.WaitForTime) {
-                routine.WaitForTime = -1f;
-                UpdateCoroutine(node.Value, frame, time);
-            } else if (routine.WaitForCoroutine != null && routine.WaitForCoroutine.Finished) {
-                routine.WaitForCoroutine = null;
-                UpdateCoroutine(routine, frame, time);
-            } else if (routine.WaitForFrame == -1 && routine.WaitForTime == -1f && routine.WaitForCoroutine == null) {
-                UpdateCoroutine(routine, frame, time);
+        public Routine Start(IEnumerator fibre) {
+            if (fibre == null) {
+                throw new Exception("Coroutine cannot be null");
             }
 
-            if (node.Value.Finished) {
-                _routines.Remove(node);
+            Routine coroutine = new Routine(fibre);
+            _routines.Add(coroutine);
+            return coroutine;
+        }
+
+        public void Stop(Routine r) {
+            _routines.Remove(r);
+            /*while (r != null) {
+                _routines.Remove(r);
+                r = r.WaitForCoroutine;
+            }*/
+        }
+
+        public void Update(int frame, float deltaTime) {
+            for (int i = 0; i < _routines.Count; i++) {
+                var routine = _routines[i];
+
+                /*var updatedInstruction = routine.CurrentInstruction.Update(frame, deltaTime);
+                routine.CurrentInstruction = updatedInstruction;
+                if (updatedInstruction.IsFinished) {
+                    if (routine.Fibre.MoveNext()) {
+                        routine.CurrentInstruction = routine.Fibre.Current as IYieldInstruction;
+                        if (routine.CurrentInstruction == null) {
+                            throw new ArgumentException("Invalid yield type " + routine.Fibre.Current);
+                        }
+                    } else {
+                        routine.IsFinished = true;
+                    }
+                }*/
+                routine.Update(frame, deltaTime);
+
+                if (routine.IsFinished) {
+                    _routines.Remove(routine);
+                }
             }
-            node = nextNode;
+
         }
     }
-    
-    private void UpdateCoroutine(Routine coroutine, int frame, float time) {
-        if (coroutine.Fibre.MoveNext()) {
-            System.Object yieldCommand = coroutine.Fibre.Current ?? 1;
-            System.Type yieldType = yieldCommand.GetType();
 
-            if (yieldType == typeof (int)) {
-                coroutine.WaitForFrame = (int) yieldCommand;
-                coroutine.WaitForFrame += frame;
-            } else if (yieldType == typeof(float)) {
-                coroutine.WaitForTime = (float)yieldCommand;
-                coroutine.WaitForTime += time;
-            } else if (yieldType == typeof (Routine)) {
-                coroutine.WaitForCoroutine = (Routine) yieldCommand;
-            }
-            else {
-                throw new ArgumentException("CoroutineScheduler: Unexpected coroutine yield type: " + yieldType);
-            }
-        } else {
-            coroutine.Finished = true;
+    public interface IYieldInstruction {
+        IYieldInstruction Update(int frame, float deltaTime);
+        bool IsFinished { get; }
+    }
+
+    public struct IdentityInstruction : IYieldInstruction {
+        public IYieldInstruction Update(int frame, float deltaTime) {
+            return this;
+        }
+
+        public bool IsFinished { get { return true; } }
+    }
+
+    public struct WaitSeconds : IYieldInstruction {
+        public float Seconds;
+
+        public IYieldInstruction Update(int frame, float deltaTime) {
+            return new WaitSeconds { Seconds = Seconds - deltaTime };
+        }
+
+        public bool IsFinished { get { return Seconds <= 0f; } }
+    }
+
+    public struct WaitFrames : IYieldInstruction {
+        public int Frames;
+        public IYieldInstruction Update(int frame, float deltaTime) {
+            return new WaitFrames{Frames = Frames - 1};
+        }
+
+        public bool IsFinished {
+            get { return Frames <= 0; }
         }
     }
-}
 
-public class Routine {
-    public IEnumerator Fibre;
+    public class Routine : IYieldInstruction {
+        public IEnumerator Fibre;
 
-    public bool Finished;
+        public IYieldInstruction CurrentInstruction;
 
-    public int WaitForFrame = -1;
-    public float WaitForTime = -1f;
-    public Routine WaitForCoroutine;
+        private bool _isFinished;
 
-    public Routine(IEnumerator fibre) {
-        Fibre = fibre;
+        public Routine(IEnumerator fibre) {
+            Fibre = fibre;
+            CurrentInstruction = new IdentityInstruction();
+            _isFinished = false;
+        }
+
+        public IYieldInstruction Update(int frame, float deltaTime) {
+            CurrentInstruction = CurrentInstruction.Update(frame, deltaTime);
+            if (CurrentInstruction.IsFinished) {
+                if (Fibre.MoveNext()) {
+                    CurrentInstruction = Fibre.Current as IYieldInstruction;
+                    if (Fibre.Current is IEnumerator) {
+                        CurrentInstruction = new Routine(Fibre.Current as IEnumerator);
+                    } else if (CurrentInstruction == null) {
+                        _isFinished = true;
+                        throw new ArgumentException("Invalid yield type " + Fibre.Current);
+                    }
+                } else {
+                    _isFinished = true;
+                }
+            }
+
+            return this;
+        }
+
+        public bool IsFinished {
+            get { return _isFinished; }
+        }
     }
 }
