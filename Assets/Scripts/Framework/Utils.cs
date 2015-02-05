@@ -46,6 +46,50 @@ public static class ReflectionUtils {
     }
 }
 
+public class LinkedList<T> {
+    private LinkedListNode<T> _first;
+
+    public LinkedListNode<T> First {
+        get { return _first; }
+    }
+
+    public void Add(T item) {
+        var node = new LinkedListNode<T>(item);
+
+        if (_first != null) {
+            node.Next = _first;
+            _first.Previous = node;
+        }
+        _first = node;
+    }
+
+    public void Remove(LinkedListNode<T> item) {
+        if (_first == item) {
+            _first = item.Next;
+        } else {
+            if (item.Next != null) {
+                item.Previous.Next = item.Next;
+                item.Next.Previous = item.Previous;
+            } else if (item.Previous != null) {
+                item.Previous.Next = null;
+            }
+        }
+        item.Previous = null;
+        item.Next = null;
+    }
+}
+
+public class LinkedListNode<T> {
+    public LinkedListNode<T> Previous;
+    public LinkedListNode<T> Next;
+
+    public T Value { get; private set; }
+
+    public LinkedListNode(T value) {
+        Value = value;
+    }
+}
+
 public class IteratableStack<T> {
     private IList<T> _stack;
 

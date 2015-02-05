@@ -8,14 +8,16 @@ using UnityEngine;
  * Todo:
  * 
  * The owner's events should really just be references to delegates, I think. No need for multicast.
- * Support Coroutines?
  * Special handling for parent->child and child-parent relationships?
  * 
  * Event propagation (damage dealing and handling with complex hierarchies is a good one)
  * Timed, cancelable transitions (camera motions are a good one)
  * Test more intricate parent->child relationships, callable states
  * 
- * Enable OnEnter and OnExit to be implemented as optional, cancelable coroutines.
+ * 
+ * 
+ * Make running coroutines block state transitions. Unless canceling, or something.
+ * 
  */
 
 /*
@@ -95,7 +97,7 @@ namespace RamjetAnvil.StateMachine {
                         stateId));
                 }
 
-                CallStateLifeCycleMethod(oldState.OnExit);
+                InvokeStateLifeCycleMethod(oldState.OnExit);
 
                 if (isNormalTransition) {
                     _stack.Pop();
@@ -104,7 +106,7 @@ namespace RamjetAnvil.StateMachine {
 
             _stack.Push(newState);
             SubscribeToStateMethods(oldState, newState);
-            CallStateLifeCycleMethod(newState.OnEnter, args);
+            InvokeStateLifeCycleMethod(newState.OnEnter, args);
         }
 
         public void TransitionToParent() {
@@ -113,7 +115,7 @@ namespace RamjetAnvil.StateMachine {
             }
 
             var oldState = _stack.Pop();
-            CallStateLifeCycleMethod(oldState.OnExit);
+            InvokeStateLifeCycleMethod(oldState.OnExit);
             SubscribeToStateMethods(oldState, _stack.Peek());
         }
 
@@ -171,7 +173,12 @@ namespace RamjetAnvil.StateMachine {
             }
         }
 
-        public void CallStateLifeCycleMethod(Delegate del, params object[] args) {
+        /// <summary>
+        /// Invokes OnEnter/OnExit function. Runs function as a coroutine if it is implemented as one.
+        /// </summary>
+        /// <param name="del"></param>
+        /// <param name="args"></param>
+        public void InvokeStateLifeCycleMethod(Delegate del, params object[] args) {
             if (del == null) {
                 return;
             }
