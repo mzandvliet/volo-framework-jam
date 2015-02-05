@@ -2,6 +2,13 @@
 using System.Collections;
 using System.Collections.Generic;
 
+/* Todo: 
+ * - Don't expose some internals of Routine class to users
+ * - Decide on flat array / recursive routine storage techniques
+ * - Could optimize away a type check by not having coroutines be YieldInstructions, but having them as explicit
+ * secondary member called 'subroutine' of the Coroutine interterface (if subroutine, do that, else handle yield instruction)
+ */
+
 namespace RamjetAnvil.StateMachine {
     /// <summary>
     /// A coroutine system initialy based on this, but prettier: http://wiki.unity3d.com/index.php?title=CoroutineScheduler
@@ -27,7 +34,7 @@ namespace RamjetAnvil.StateMachine {
             _routines.Remove(r);
             while (r != null) {
                 _routines.Remove(r);
-                r = (Routine) r.CurrentInstruction;
+                r = (Routine) r.Instruction;
             }
         }
 
@@ -35,8 +42,8 @@ namespace RamjetAnvil.StateMachine {
             for (int i = 0; i < _routines.Count; i++) {
                 var routine = _routines[i];
 
-                var updatedInstruction = routine.CurrentInstruction.Update(frame, deltaTime);
-                routine.CurrentInstruction = updatedInstruction;
+                var updatedInstruction = routine.Instruction.Update(frame, deltaTime);
+                routine.Instruction = updatedInstruction;
 
                 if (updatedInstruction.IsFinished) {
                     if (routine.Fibre.MoveNext()) {
@@ -55,16 +62,16 @@ namespace RamjetAnvil.StateMachine {
         }
 
         private void UpdateRoutine(Routine routine) {
-            // Handle regular yield instructions. If that fails, see if we're actually supposed to start a subroutine
+            // Handle regular yield instruction. If that fails, see if we're actually supposed to start a subroutine
 
             var current = routine.Fibre.Current as IYieldInstruction;
             if (current != null) {
-                routine.CurrentInstruction = current;
+                routine.Instruction = current;
             }
             else {
                 var fibre = routine.Fibre.Current as IEnumerator;
                 if (fibre != null) {
-                    routine.CurrentInstruction = Start(fibre);
+                    routine.Instruction = Start(fibre);
                 }
                 else {
                     throw new ArgumentException("Invalid yield type " + routine.Fibre.Current);
@@ -110,11 +117,11 @@ namespace RamjetAnvil.StateMachine {
     public class Routine : IYieldInstruction {
         public IEnumerator Fibre;
 
-        public IYieldInstruction CurrentInstruction;
+        public IYieldInstruction Instruction;
 
         public Routine(IEnumerator fibre) {
             Fibre = fibre;
-            CurrentInstruction = new IdentityInstruction();
+            Instruction = new IdentityInstruction();
             IsFinished = false;
         }
 

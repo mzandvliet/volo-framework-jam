@@ -50,6 +50,10 @@ namespace RamjetAnvil.StateMachine {
         void TransitionToParent();
     }
 
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <typeparam name="T">The type of the object that owns this StateMachine</typeparam>
     public class StateMachine<T> : IStateMachine {
         private readonly T _owner;
         private readonly CoroutineScheduler _scheduler;
@@ -209,7 +213,6 @@ namespace RamjetAnvil.StateMachine {
                     del.DynamicInvoke(args);
                 }
             } catch (TargetParameterCountException e) {
-                //Debug.LogException(e);
                 throw new ArgumentException(GetArgumentExceptionDetails((State)del.Target, del, args));
             }
         }

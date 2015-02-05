@@ -7,17 +7,16 @@ public class Coroutines : MonoBehaviour {
 
 	void Start () {
         _scheduler = new CoroutineScheduler();
-	    _scheduler.Start(WaitAndPrint());
+
+        for (int i = 0; i < 1000; i++) {
+            _scheduler.Start(DoWorkEachFrame());
+        }
 	}
 
-    IEnumerator WaitAndPrint() {
-        Debug.Log("Start");
-        yield return _scheduler.Start(Wait());
-        Debug.Log("End");
-    }
-
-    IEnumerator Wait() {
-        yield return 1f;
+    IEnumerator DoWorkEachFrame() {
+        for (int i = 0; i < 10000; i++) {
+            yield return new WaitFrames();
+        }
     }
 	
 	void Update () {
