@@ -57,6 +57,7 @@ namespace RamjetAnvil.StateMachine {
         private readonly IteratableStack<StateInstance> _stack;
 
         private readonly IDictionary<string, EventInfo> _ownerEvents;
+        private bool _isTransitioning;
 
         public CoroutineScheduler Scheduler {
             get { return _scheduler; }
@@ -86,6 +87,10 @@ namespace RamjetAnvil.StateMachine {
         }
 
         public void Transition(StateId stateId, params object[] args) {
+            if (_isTransitioning) {
+                return;
+            }
+
             StateInstance oldState = null;
             StateInstance newState = _states[stateId];
 
@@ -192,14 +197,14 @@ namespace RamjetAnvil.StateMachine {
         /// </summary>
         /// <param name="del"></param>
         /// <param name="args"></param>
-        public void InvokeStateLifeCycleMethod(Delegate del, params object[] args) {
+        private void InvokeStateLifeCycleMethod(Delegate del, params object[] args) {
             if (del == null) {
                 return;
             }
 
             try {
                 if (del.Method.ReturnType == typeof(IEnumerator)) {
-                    _scheduler.Start((IEnumerator)del.DynamicInvoke(args));
+                    _scheduler.Start(WaitForTransition((IEnumerator)del.DynamicInvoke(args)));
                 } else {
                     del.DynamicInvoke(args);
                 }
@@ -207,6 +212,18 @@ namespace RamjetAnvil.StateMachine {
                 //Debug.LogException(e);
                 throw new ArgumentException(GetArgumentExceptionDetails((State)del.Target, del, args));
             }
+        }
+
+        /// <summary>
+        ///  Performs the given transition coroutine, and block any state transitions while doing so
+        /// </summary>
+        /// <param name="transition"></param>
+        /// <returns></returns>
+        private IEnumerator WaitForTransition(IEnumerator transition) {
+            
+            _isTransitioning = true;
+            yield return transition;
+            _isTransitioning = false;
         }
 
         private string GetArgumentExceptionDetails(State state, Delegate del, params object[] args) {

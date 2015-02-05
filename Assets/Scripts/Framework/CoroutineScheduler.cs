@@ -119,21 +119,6 @@ namespace RamjetAnvil.StateMachine {
         }
 
         public IYieldInstruction Update(int frame, float deltaTime) {
-            //CurrentInstruction = CurrentInstruction.Update(frame, deltaTime);
-            //if (CurrentInstruction.IsFinished) {
-            //    if (Fibre.MoveNext()) {
-            //        CurrentInstruction = Fibre.Current as IYieldInstruction;
-            //        if (Fibre.Current is IEnumerator) {
-            //            CurrentInstruction = new Routine(Fibre.Current as IEnumerator);
-            //        } else if (CurrentInstruction == null) {
-            //            _isFinished = true;
-            //            throw new ArgumentException("Invalid yield type " + Fibre.Current);
-            //        }
-            //    } else {
-            //        _isFinished = true;
-            //    }
-            //}
-
             return this;
         }
 
