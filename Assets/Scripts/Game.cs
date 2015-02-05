@@ -59,8 +59,9 @@ public class Game : MonoBehaviour {
 
     #region State Methods
 
+    [StateEvent("Update")]
     public event Action OnUpdate; 
-    [StateMethod]
+    
     private void Update() {
         _scheduler.Update(Time.frameCount, Time.time);
 
@@ -69,11 +70,12 @@ public class Game : MonoBehaviour {
         }
     }
 
-    public event Action OnOnGUI; // Todo: Bah, coding by convention makes this ugly
-    [StateMethod]
+    [StateEvent("OnGUI")]
+    public event Action OnGui;
+    
     private void OnGUI() {
-        if (OnOnGUI != null) {
-            OnOnGUI();
+        if (OnGui != null) {
+            OnGui();
         }
     }
 
@@ -133,7 +135,7 @@ public class Game : MonoBehaviour {
             _startTime = Time.time;
             _score = 0;
 
-            yield return Machine.Scheduler.Start(Transitions.Transition(_camera, _camPos));
+            yield return Transitions.Transition(_camera, _camPos);
 
             SpawnPlayer(input);
             SpawnEnemies();
@@ -270,7 +272,7 @@ public class Game : MonoBehaviour {
                 camera.transform.position = Vector3.Lerp(originalPosition, target.position, lerp);
                 camera.transform.rotation = Quaternion.Lerp(originalRotation, target.rotation, lerp);
                 time += Time.deltaTime;
-                yield return 0;
+                yield return new WaitFrames();
             }
             camera.transform.position = target.position;
             camera.transform.rotation = target.rotation;

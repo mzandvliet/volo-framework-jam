@@ -1,10 +1,11 @@
 ﻿using System;
 using System.Collections;
-/* Based on this, but prettified slightly: http://wiki.unity3d.com/index.php?title=CoroutineScheduler
- */
 using System.Collections.Generic;
 
 namespace RamjetAnvil.StateMachine {
+    /// <summary>
+    /// A coroutine system initialy based on this, but prettier: http://wiki.unity3d.com/index.php?title=CoroutineScheduler
+    /// </summary>
     public class CoroutineScheduler {
         private IList<Routine> _routines;
 
@@ -24,35 +25,51 @@ namespace RamjetAnvil.StateMachine {
 
         public void Stop(Routine r) {
             _routines.Remove(r);
-            /*while (r != null) {
+            while (r != null) {
                 _routines.Remove(r);
-                r = r.WaitForCoroutine;
-            }*/
+                r = (Routine) r.CurrentInstruction;
+            }
         }
 
         public void Update(int frame, float deltaTime) {
             for (int i = 0; i < _routines.Count; i++) {
                 var routine = _routines[i];
 
-                /*var updatedInstruction = routine.CurrentInstruction.Update(frame, deltaTime);
+                var updatedInstruction = routine.CurrentInstruction.Update(frame, deltaTime);
                 routine.CurrentInstruction = updatedInstruction;
+
                 if (updatedInstruction.IsFinished) {
                     if (routine.Fibre.MoveNext()) {
-                        routine.CurrentInstruction = routine.Fibre.Current as IYieldInstruction;
-                        if (routine.CurrentInstruction == null) {
-                            throw new ArgumentException("Invalid yield type " + routine.Fibre.Current);
-                        }
-                    } else {
+                        UpdateRoutine(routine);
+                    }
+                    else {
                         routine.IsFinished = true;
                     }
-                }*/
-                routine.Update(frame, deltaTime);
+                }
 
                 if (routine.IsFinished) {
                     _routines.Remove(routine);
                 }
             }
 
+        }
+
+        private void UpdateRoutine(Routine routine) {
+            // Handle regular yield instructions. If that fails, see if we're actually supposed to start a subroutine
+
+            var current = routine.Fibre.Current as IYieldInstruction;
+            if (current != null) {
+                routine.CurrentInstruction = current;
+            }
+            else {
+                var fibre = routine.Fibre.Current as IEnumerator;
+                if (fibre != null) {
+                    routine.CurrentInstruction = Start(fibre);
+                }
+                else {
+                    throw new ArgumentException("Invalid yield type " + routine.Fibre.Current);
+                }
+            }
         }
     }
 
@@ -95,35 +112,31 @@ namespace RamjetAnvil.StateMachine {
 
         public IYieldInstruction CurrentInstruction;
 
-        private bool _isFinished;
-
         public Routine(IEnumerator fibre) {
             Fibre = fibre;
             CurrentInstruction = new IdentityInstruction();
-            _isFinished = false;
+            IsFinished = false;
         }
 
         public IYieldInstruction Update(int frame, float deltaTime) {
-            CurrentInstruction = CurrentInstruction.Update(frame, deltaTime);
-            if (CurrentInstruction.IsFinished) {
-                if (Fibre.MoveNext()) {
-                    CurrentInstruction = Fibre.Current as IYieldInstruction;
-                    if (Fibre.Current is IEnumerator) {
-                        CurrentInstruction = new Routine(Fibre.Current as IEnumerator);
-                    } else if (CurrentInstruction == null) {
-                        _isFinished = true;
-                        throw new ArgumentException("Invalid yield type " + Fibre.Current);
-                    }
-                } else {
-                    _isFinished = true;
-                }
-            }
+            //CurrentInstruction = CurrentInstruction.Update(frame, deltaTime);
+            //if (CurrentInstruction.IsFinished) {
+            //    if (Fibre.MoveNext()) {
+            //        CurrentInstruction = Fibre.Current as IYieldInstruction;
+            //        if (Fibre.Current is IEnumerator) {
+            //            CurrentInstruction = new Routine(Fibre.Current as IEnumerator);
+            //        } else if (CurrentInstruction == null) {
+            //            _isFinished = true;
+            //            throw new ArgumentException("Invalid yield type " + Fibre.Current);
+            //        }
+            //    } else {
+            //        _isFinished = true;
+            //    }
+            //}
 
             return this;
         }
 
-        public bool IsFinished {
-            get { return _isFinished; }
-        }
+        public bool IsFinished { get; set; }
     }
 }

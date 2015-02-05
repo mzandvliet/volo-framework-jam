@@ -2,7 +2,6 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
-//using UnityEngine;
 
 /*
  * Todo:
@@ -35,8 +34,14 @@ using System.Reflection;
  */
 
 namespace RamjetAnvil.StateMachine {
-    [AttributeUsage(AttributeTargets.Method)]
-    public class StateMethodAttribute : Attribute {}
+    [AttributeUsage(AttributeTargets.Event)]
+    public class StateEvent : Attribute {
+        public string Name { get; private set; }
+
+        public StateEvent(string name) {
+            Name = name;
+        }
+    }
 
     public interface IStateMachine {
         CoroutineScheduler Scheduler { get; }
@@ -51,7 +56,6 @@ namespace RamjetAnvil.StateMachine {
         private readonly IDictionary<StateId, StateInstance> _states;
         private readonly IteratableStack<StateInstance> _stack;
 
-        private readonly IList<MethodInfo> _ownerMethods;
         private readonly IDictionary<string, EventInfo> _ownerEvents;
 
         public CoroutineScheduler Scheduler {
@@ -66,8 +70,9 @@ namespace RamjetAnvil.StateMachine {
             _stack = new IteratableStack<StateInstance>();
 
             Type type = typeof (T);
-            _ownerMethods = GetMethodsWithAttribute(typeof (T), typeof (StateMethodAttribute));
-            _ownerEvents = GetMatchingOwnerEvents(type, _ownerMethods);
+
+            _ownerEvents = GetStateEvents(type);
+            AssertStateMethodIntegrity(type, _ownerEvents);
         }
 
         public StateInstance AddState(StateId stateId, State state) {
@@ -75,7 +80,7 @@ namespace RamjetAnvil.StateMachine {
                 throw new ArgumentException(string.Format("StateId '{0}' is already registered.", stateId));
             }
 
-            var instance = new StateInstance(stateId, state, GetImplementedStateMethods(state, _ownerMethods));
+            var instance = new StateInstance(stateId, state, GetImplementedStateMethods(state, _ownerEvents));
             _states.Add(stateId, instance);
             return instance;
         }
@@ -121,37 +126,46 @@ namespace RamjetAnvil.StateMachine {
 
         private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
-        private static IList<MethodInfo> GetMethodsWithAttribute(Type ownerType, Type attributeType) {
-            return ReflectionUtils.GetMethodsWithAttribute(ownerType, attributeType, Flags);
-        }
+        private static IDictionary<string, EventInfo> GetStateEvents(Type type) {
+            var events = new Dictionary<string, EventInfo>();
 
-        private IDictionary<string, EventInfo> GetMatchingOwnerEvents(Type ownerType, IEnumerable<MethodInfo> methods) {
-            var stateEvents = new Dictionary<string, EventInfo>();
-
-            var events = ownerType.GetEvents(Flags);
-            foreach (var e in events) {
-                foreach (var m in methods) {
-                    if (e.Name.Equals("On" + m.Name)) {
-                        stateEvents.Add(m.Name, e);
-                    }
+            var attributeType = typeof (StateEvent);
+            var allEvents = type.GetEvents(Flags);
+            foreach (var e in allEvents) {
+                var attributes = e.GetCustomAttributes(attributeType, false);
+                if (attributes.Length > 0) {
+                    var a = (StateEvent) attributes[0];
+                    events.Add(a.Name, e);
                 }
             }
 
-            return stateEvents;
+            return events;
         }
 
-        private static IDictionary<string, Delegate> GetImplementedStateMethods(State state,
-            IEnumerable<MethodInfo> ownerMethods) {
+        private static void AssertStateMethodIntegrity(Type type, IDictionary<string, EventInfo> ownerEvents) {
+            foreach (var pair in ownerEvents) {
+                var method = type.GetMethod(pair.Key, Flags);
+                if (method == null) {
+                    throw new StateMachineException(string.Format(
+                        "Failed to find method matching event name '{0}' in '{1}'. Please implement method '{0}', and ensure it invokes '{2}'.",
+                        pair.Key,
+                        type,
+                        pair.Value.Name));
+                }
+            }
+        }
+
+        private static IDictionary<string, Delegate> GetImplementedStateMethods(State state, IDictionary<string, EventInfo> ownerEvents) {
             var implementedMethods = new Dictionary<string, Delegate>();
 
             Type type = state.GetType();
 
             var stateMethods = type.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic);
             foreach (var stateMethod in stateMethods) {
-                foreach (var ownerMethod in ownerMethods) {
-                    if (stateMethod.Name == ownerMethod.Name) {
+                foreach (var ownerEvent in ownerEvents) {
+                    if (stateMethod.Name == ownerEvent.Key) {
                         var del = ReflectionUtils.ToDelegate(stateMethod, state);
-                        implementedMethods.Add(ownerMethod.Name, del);
+                        implementedMethods.Add(ownerEvent.Key, del);
                     }
                 }
             }
@@ -325,5 +339,9 @@ namespace RamjetAnvil.StateMachine {
         public State(IStateMachine machine) {
             Machine = machine;
         }
+    }
+
+    public class StateMachineException : Exception {
+        public StateMachineException(string message) : base(message) {}
     }
 }
