@@ -207,8 +207,8 @@ namespace RamjetAnvil.StateMachine {
             }
 
             try {
-                if (del.Method.ReturnType == typeof(IEnumerator)) {
-                    //_scheduler.Start(WaitForTransition((IEnumerator)del.DynamicInvoke(args)));
+                if (del.Method.ReturnType == typeof(IEnumerator<YieldCommand>)) {
+                    _scheduler.Start(WaitForTransition((IEnumerator<YieldCommand>)del.DynamicInvoke(args)));
                 } else {
                     del.DynamicInvoke(args);
                 }
@@ -222,10 +222,10 @@ namespace RamjetAnvil.StateMachine {
         /// </summary>
         /// <param name="transition"></param>
         /// <returns></returns>
-        private IEnumerator WaitForTransition(IEnumerator transition) {
+        private IEnumerator<YieldCommand> WaitForTransition(IEnumerator<YieldCommand> transition) {
             
             _isTransitioning = true;
-            yield return transition;
+            yield return _scheduler.YieldStart(transition);
             _isTransitioning = false;
         }
 

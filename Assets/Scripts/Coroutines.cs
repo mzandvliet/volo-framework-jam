@@ -18,8 +18,7 @@ public class Coroutines : MonoBehaviour {
     IEnumerator<YieldCommand> WaitAndPrintA() {
         Debug.Log("WaitAndPrintA_Start");
         yield return new YieldCommand { Seconds = 3 };
-        //yield return _scheduler.YieldStart(WaitAndPrintB());
-        yield return new YieldCommand(WaitAndPrintB());
+        yield return _scheduler.YieldStart(WaitAndPrintB());
         Debug.Log("WaitAndPrintA_End");
     }
 

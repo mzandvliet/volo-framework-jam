@@ -85,7 +85,7 @@ public class Game : MonoBehaviour {
             _cam = cam;
         }
 
-        private IEnumerator OnEnter() {
+        private IEnumerator<YieldCommand> OnEnter() {
             return Transitions.Transition(_cam, _camPos);
         }
 
@@ -117,12 +117,12 @@ public class Game : MonoBehaviour {
             _enemies = new List<Character>();
         }
 
-        IEnumerator OnEnter(PlayerInputDevice input) {
+        IEnumerator<YieldCommand> OnEnter(PlayerInputDevice input) {
             _input = input;
             _startTime = Time.time;
             _score = 0;
 
-            yield return Transitions.Transition(_camera, _camPos);
+            yield return Machine.Scheduler.YieldStart(Transitions.Transition(_camera, _camPos));
 
             SpawnPlayer(input);
             SpawnEnemies();
@@ -235,7 +235,7 @@ public class Game : MonoBehaviour {
     #region Transitions
 
     public static class Transitions {
-        public static IEnumerator Transition(Camera camera, Transform target) {
+        public static IEnumerator<YieldCommand> Transition(Camera camera, Transform target) {
             const float duration = 1f;
 
             Vector3 originalPosition = camera.transform.position;
@@ -247,7 +247,7 @@ public class Game : MonoBehaviour {
                 camera.transform.position = Vector3.Lerp(originalPosition, target.position, lerp);
                 camera.transform.rotation = Quaternion.Lerp(originalRotation, target.rotation, lerp);
                 time += Time.deltaTime;
-                yield return null; //yield return new WaitFrames();
+                yield return YieldCommand.NextFrame;
             }
             camera.transform.position = target.position;
             camera.transform.rotation = target.rotation;

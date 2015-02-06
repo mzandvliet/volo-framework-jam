@@ -54,9 +54,6 @@ namespace RamjetAnvil.StateMachine {
                 var routine = _routines[i];
                 routine.Command.Update(deltaFrames, deltaTime);
 
-                if (routine.Command.SubRoutine != null) {
-                    routine.Command = new YieldCommand {Routine = Start(routine.Command.SubRoutine.Command)};
-                }
                 if (routine.Command.IsIdentity() || routine.Command.IsFinished) {
                     if (routine.Fibre.MoveNext()) {
                         routine.Command = routine.Fibre.Current;
@@ -78,14 +75,6 @@ namespace RamjetAnvil.StateMachine {
         public int? Frames;
         public float? Seconds;
         public Routine Routine;
-        public SubRoutine SubRoutine;
-
-        public YieldCommand(IEnumerator<YieldCommand> fibre) {
-            SubRoutine = new SubRoutine(fibre);
-            Frames = null;
-            Seconds = null;
-            Routine = null;
-        }
 
         public void Update(int deltaFrames, float deltaTime) {
             Frames -= deltaFrames;
@@ -104,14 +93,8 @@ namespace RamjetAnvil.StateMachine {
         public bool IsIdentity() {
             return Frames == null && Seconds == null && Routine == null;
         }
-    }
 
-    public class SubRoutine {
-        public IEnumerator<YieldCommand> Command;
-
-        public SubRoutine(IEnumerator<YieldCommand> command) {
-            Command = command;
-        }
+        public static readonly YieldCommand NextFrame = new YieldCommand {Frames = 0};
     }
 
     public class Routine {
@@ -121,7 +104,7 @@ namespace RamjetAnvil.StateMachine {
 
         public Routine(IEnumerator<YieldCommand> fibre) {
             Fibre = fibre;
-
+            
 //            if (Fibre.MoveNext()) {
 //                Instruction = Fibre.Current;
 //            }
