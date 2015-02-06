@@ -247,7 +247,7 @@ public class Game : MonoBehaviour {
                 camera.transform.position = Vector3.Lerp(originalPosition, target.position, lerp);
                 camera.transform.rotation = Quaternion.Lerp(originalRotation, target.rotation, lerp);
                 time += Time.deltaTime;
-                yield return new WaitFrames();
+                yield return null; //yield return new WaitFrames();
             }
             camera.transform.position = target.position;
             camera.transform.rotation = target.rotation;

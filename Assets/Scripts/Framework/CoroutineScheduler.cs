@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 
 /* Todo: 
@@ -20,7 +19,7 @@ namespace RamjetAnvil.StateMachine {
             _routines = new List<Routine>();
         }
 
-        public Routine Start(IEnumerator fibre) {
+        public Routine Start(IEnumerator<YieldCommand> fibre) {
             if (fibre == null) {
                 throw new Exception("Coroutine cannot be null");
             }
@@ -30,24 +29,37 @@ namespace RamjetAnvil.StateMachine {
             return coroutine;
         }
 
+        public YieldCommand YieldStart(IEnumerator<YieldCommand> fibre) {
+            return new YieldCommand {Routine = Start(fibre)};
+        }
+
         public void Stop(Routine r) {
             _routines.Remove(r);
             while (r != null) {
                 _routines.Remove(r);
-                r = (Routine) r.Instruction;
+                r = r.Fibre.Current.Routine;
             }
         }
 
-        public void Update(int frame, float deltaTime) {
+        private int _lastFrame;
+        private float _lastTime;
+
+        public void Update(int frame, float time) {
+            int deltaFrames = frame - _lastFrame;
+            _lastFrame = frame;
+            float deltaTime = time - _lastTime;
+            _lastTime = time;
+
             for (int i = 0; i < _routines.Count; i++) {
                 var routine = _routines[i];
+                routine.Command.Update(deltaFrames, deltaTime);
 
-                var updatedInstruction = routine.Instruction.Update(frame, deltaTime);
-                routine.Instruction = updatedInstruction;
-
-                if (updatedInstruction.IsFinished) {
+                if (routine.Command.SubRoutine != null) {
+                    routine.Command = new YieldCommand {Routine = Start(routine.Command.SubRoutine.Command)};
+                }
+                if (routine.Command.IsIdentity() || routine.Command.IsFinished) {
                     if (routine.Fibre.MoveNext()) {
-                        UpdateRoutine(routine);
+                        routine.Command = routine.Fibre.Current;
                     }
                     else {
                         routine.IsFinished = true;
@@ -60,73 +72,61 @@ namespace RamjetAnvil.StateMachine {
             }
 
         }
-
-        private void UpdateRoutine(Routine routine) {
-            // Handle regular yield instruction. If that fails, see if we're actually supposed to start a subroutine
-
-            var current = routine.Fibre.Current as IYieldInstruction;
-            if (current != null) {
-                routine.Instruction = current;
-            }
-            else {
-                var fibre = routine.Fibre.Current as IEnumerator;
-                if (fibre != null) {
-                    routine.Instruction = Start(fibre);
-                }
-                else {
-                    throw new ArgumentException("Invalid yield type " + routine.Fibre.Current);
-                }
-            }
-        }
     }
 
-    public interface IYieldInstruction {
-        IYieldInstruction Update(int frame, float deltaTime);
-        bool IsFinished { get; }
-    }
+    public struct YieldCommand {
+        public int? Frames;
+        public float? Seconds;
+        public Routine Routine;
+        public SubRoutine SubRoutine;
 
-    public struct IdentityInstruction : IYieldInstruction {
-        public IYieldInstruction Update(int frame, float deltaTime) {
-            return this;
+        public YieldCommand(IEnumerator<YieldCommand> fibre) {
+            SubRoutine = new SubRoutine(fibre);
+            Frames = null;
+            Seconds = null;
+            Routine = null;
         }
 
-        public bool IsFinished { get { return true; } }
-    }
-
-    public struct WaitSeconds : IYieldInstruction {
-        public float Seconds;
-
-        public IYieldInstruction Update(int frame, float deltaTime) {
-            return new WaitSeconds { Seconds = Seconds - deltaTime };
-        }
-
-        public bool IsFinished { get { return Seconds <= 0f; } }
-    }
-
-    public struct WaitFrames : IYieldInstruction {
-        public int Frames;
-        public IYieldInstruction Update(int frame, float deltaTime) {
-            return new WaitFrames{Frames = Frames - 1};
+        public void Update(int deltaFrames, float deltaTime) {
+            Frames -= deltaFrames;
+            Seconds -= deltaTime;
         }
 
         public bool IsFinished {
-            get { return Frames <= 0; }
+            get {
+                return
+                    (Frames != null && Frames <= 0) ||
+                    (Seconds != null && Seconds <= 0) ||
+                    (Routine != null && Routine.IsFinished);
+            }
+        }
+
+        public bool IsIdentity() {
+            return Frames == null && Seconds == null && Routine == null;
         }
     }
 
-    public class Routine : IYieldInstruction {
-        public IEnumerator Fibre;
+    public class SubRoutine {
+        public IEnumerator<YieldCommand> Command;
 
-        public IYieldInstruction Instruction;
-
-        public Routine(IEnumerator fibre) {
-            Fibre = fibre;
-            Instruction = new IdentityInstruction();
-            IsFinished = false;
+        public SubRoutine(IEnumerator<YieldCommand> command) {
+            Command = command;
         }
+    }
 
-        public IYieldInstruction Update(int frame, float deltaTime) {
-            return this;
+    public class Routine {
+        public IEnumerator<YieldCommand> Fibre;
+
+        public YieldCommand Command;
+
+        public Routine(IEnumerator<YieldCommand> fibre) {
+            Fibre = fibre;
+
+//            if (Fibre.MoveNext()) {
+//                Instruction = Fibre.Current;
+//            }
+
+            IsFinished = false;
         }
 
         public bool IsFinished { get; set; }

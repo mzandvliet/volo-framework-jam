@@ -208,7 +208,7 @@ namespace RamjetAnvil.StateMachine {
 
             try {
                 if (del.Method.ReturnType == typeof(IEnumerator)) {
-                    _scheduler.Start(WaitForTransition((IEnumerator)del.DynamicInvoke(args)));
+                    //_scheduler.Start(WaitForTransition((IEnumerator)del.DynamicInvoke(args)));
                 } else {
                     del.DynamicInvoke(args);
                 }
