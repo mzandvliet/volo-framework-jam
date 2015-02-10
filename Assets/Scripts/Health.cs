@@ -8,9 +8,10 @@ public class Health : MonoBehaviour {
     public event System.Action<Health, float> OnDamaged;
     public event System.Action<Health> OnDied;
 
-    private void Awake() {
+    private void OnSpawned() {
         _health = _initialHealth;
     }
+    
 
     public void Damage(float damage) {
         damage = Mathf.Abs(damage);

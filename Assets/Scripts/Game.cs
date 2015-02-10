@@ -1,6 +1,6 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
+using RamjetAnvil.Coroutine;
 using RamjetAnvil.StateMachine;
 using UnityEngine;
 
@@ -19,9 +19,14 @@ using UnityEngine;
  * Instead of saying a transition *is* a camera transition, we could say a transition could use a camera transition.
  */
 
+public class Prefabs {
+    public static readonly PrefabId Player = new PrefabId("Player");
+    public static readonly PrefabId Enemy = new PrefabId("Enemy");
+    public static readonly PrefabId Projectile = new PrefabId("Projectile");
+}
+
 public class Game : MonoBehaviour {
-    [SerializeField] private GameObject _characterPrefab;
-    [SerializeField] private GameObject _projectilePrefab;
+    [SerializeField] private Spawner _spawner;
     [SerializeField] private Camera _camera;
     [SerializeField] private Transform _cameraPositionStartScreen;
     [SerializeField] private Transform _cameraPositionGame;
@@ -45,7 +50,7 @@ public class Game : MonoBehaviour {
         _machine.AddState(States.StartScreen, new StartScreen(_machine, inputDevices, _cameraPositionStartScreen, _camera))
             .Permit(States.InGame);
 
-        _machine.AddState(States.InGame, new InGame(_machine, _characterPrefab, _cameraPositionGame, _camera))
+        _machine.AddState(States.InGame, new InGame(_machine, _spawner, _cameraPositionGame, _camera))
             .Permit(States.ScoreScreen)
             .PermitChild(States.InGame_Paused);
 
@@ -60,10 +65,10 @@ public class Game : MonoBehaviour {
     #region State Methods
 
     [StateEvent("Update")]
-    public event Action OnUpdate; 
-    
+    public event Action OnUpdate;
+
     private void Update() {
-        _scheduler.Update(Time.frameCount, Time.time);
+	    _scheduler.Update(Time.frameCount, Time.time);
 
         if (OnUpdate != null) {
             OnUpdate();
@@ -85,7 +90,7 @@ public class Game : MonoBehaviour {
             _cam = cam;
         }
 
-        private IEnumerator<YieldCommand> OnEnter() {
+        private IEnumerator<WaitCommand> OnEnter() {
             return Transitions.Transition(_cam, _camPos);
         }
 
@@ -100,7 +105,7 @@ public class Game : MonoBehaviour {
     }
 
     private class InGame : State {
-        private GameObject _characterPrefab;
+        private Spawner _spawner;
         private Camera _camera;
         private Transform _camPos;
         private PlayerInputDevice _input;
@@ -110,33 +115,31 @@ public class Game : MonoBehaviour {
         private float _startTime;
         private int _score;
 
-        public InGame(IStateMachine machine, GameObject characterPrefab, Transform camPos, Camera camera) : base(machine) {
-            _characterPrefab = characterPrefab;
+        public InGame(IStateMachine machine, Spawner spawner, Transform camPos, Camera camera) : base(machine) {
+            _spawner = spawner;
             _camera = camera;
             _camPos = camPos;
             _enemies = new List<Character>();
         }
 
-        IEnumerator<YieldCommand> OnEnter(PlayerInputDevice input) {
+        IEnumerator<WaitCommand> OnEnter(PlayerInputDevice input) {
             _input = input;
             _startTime = Time.time;
             _score = 0;
 
-            yield return Machine.Scheduler.YieldStart(Transitions.Transition(_camera, _camPos));
+            yield return WaitCommand.WaitRoutine(Transitions.Transition(_camera, _camPos));
 
             SpawnPlayer(input);
             SpawnEnemies();
         }
 
         private void SpawnPlayer(PlayerInputDevice input) {
-            var playerObject = (GameObject)Instantiate(_characterPrefab);
+            var playerObject = _spawner.Get(Prefabs.Player).Spawn();
+
             var playerCharacter = playerObject.GetComponent<Character>();
-            var controller = playerObject.AddComponent<PlayerCharacterController>();
-            controller.Character = playerObject.GetComponent<Character>();
+            var controller = playerObject.GetComponent<PlayerCharacterController>();
             controller.Input = input;
             controller.Camera = _camera;
-
-            playerCharacter.WalkSpeed = 10f; // Todo: separate prefab
 
             _player = playerCharacter;
         }
@@ -146,10 +149,12 @@ public class Game : MonoBehaviour {
 
             for (int i = 0; i < 10; i++) {
                 Vector3 spawnPoint = baseSpawn + Vector3.right*(float) i;
-                var enemyObject = (GameObject)Instantiate(_characterPrefab, spawnPoint, Quaternion.identity);
+                var enemyObject = _spawner.Get(Prefabs.Enemy).Spawn();
+                enemyObject.transform.position = spawnPoint;
+                enemyObject.transform.rotation = Quaternion.identity;
+
                 var enemyCharacter = enemyObject.GetComponent<Character>();
-                var controller = enemyObject.AddComponent<AiCharacterController>();
-                controller.Character = enemyCharacter;
+                var controller = enemyObject.GetComponent<AiCharacterController>();
                 controller.Target = _player;
 
                 enemyObject.GetComponent<Health>().OnDied += OnEnemyKilled;
@@ -160,7 +165,7 @@ public class Game : MonoBehaviour {
 
         private void OnEnemyKilled(Health health) {
             var enemy = health.GetComponent<Character>();
-            Destroy(enemy.gameObject);
+            _spawner.Get(Prefabs.Enemy).Despawn(enemy.gameObject);
             _enemies.Remove(enemy);
             
             _score ++;
@@ -181,10 +186,10 @@ public class Game : MonoBehaviour {
         }
 
         private void OnExit() {
-            Destroy(_player.gameObject);
+            _spawner.Get(Prefabs.Player).Despawn(_player.gameObject);
 
             for (int i = 0; i < _enemies.Count; i++) {
-                Destroy(_enemies[i].gameObject);
+                _spawner.Get(Prefabs.Enemy).Despawn(_enemies[i].gameObject);
             }
 
             _enemies.Clear();
@@ -235,7 +240,7 @@ public class Game : MonoBehaviour {
     #region Transitions
 
     public static class Transitions {
-        public static IEnumerator<YieldCommand> Transition(Camera camera, Transform target) {
+        public static IEnumerator<WaitCommand> Transition(Camera camera, Transform target) {
             const float duration = 1f;
 
             Vector3 originalPosition = camera.transform.position;
@@ -247,7 +252,7 @@ public class Game : MonoBehaviour {
                 camera.transform.position = Vector3.Lerp(originalPosition, target.position, lerp);
                 camera.transform.rotation = Quaternion.Lerp(originalRotation, target.rotation, lerp);
                 time += Time.deltaTime;
-                yield return YieldCommand.NextFrame;
+                yield return WaitCommand.WaitForNextFrame;
             }
             camera.transform.position = target.position;
             camera.transform.rotation = target.rotation;

@@ -1,5 +1,5 @@
 ﻿using System.Collections.Generic;
-using RamjetAnvil.StateMachine;
+using RamjetAnvil.Coroutine;
 using UnityEngine;
 
 public class Coroutines : MonoBehaviour {
@@ -15,25 +15,26 @@ public class Coroutines : MonoBehaviour {
         }
 	}
 
-    IEnumerator<YieldCommand> WaitAndPrintA() {
+    IEnumerator<WaitCommand> WaitAndPrintA() {
         Debug.Log("WaitAndPrintA_Start");
-        yield return new YieldCommand { Seconds = 3 };
-        yield return _scheduler.YieldStart(WaitAndPrintB());
+        yield return WaitCommand.WaitSeconds(3);
+        yield return WaitCommand.WaitRoutine(WaitAndPrintB());
         Debug.Log("WaitAndPrintA_End");
     }
 
-    IEnumerator<YieldCommand> WaitAndPrintB() {
+    IEnumerator<WaitCommand> WaitAndPrintB() {
         Debug.Log("WaitAndPrintB_Start");
-        yield return new YieldCommand { Seconds = 3 };
+        yield return WaitCommand.WaitSeconds(3);
         Debug.Log("WaitAndPrintB_End");
     }
 
-    IEnumerator<YieldCommand> DoWorkEachFrame() {
+    IEnumerator<WaitCommand> DoWorkEachFrame() {
         for (int i = 0; i < 100000; i++) {
-            yield return new YieldCommand {Frames = 0};
+            yield return WaitCommand.WaitForNextFrame;
         }
     }
-	
+
+
 	void Update () {
 	    _scheduler.Update(Time.frameCount, Time.time);
 	}

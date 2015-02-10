@@ -6,8 +6,14 @@ public class Character : MonoBehaviour {
     [SerializeField] private float _walkSpeed = 1f;
     [SerializeField] private float _turnSpeed = 45f;
 
+    private Spawner _spawner;
     private Health _health;
     private CharacterInput _input;
+
+    public Spawner Spawner {
+        get { return _spawner; }
+        set { _spawner = value; }
+    }
 
     public float WalkSpeed {
         get { return _walkSpeed; }
@@ -22,7 +28,7 @@ public class Character : MonoBehaviour {
     private void Awake() {
         _health = GetComponent<Health>();
         _health.OnDied += health => {
-            Destroy(gameObject);
+            Debug.Log(name + " died");
         };
     }
 
@@ -33,6 +39,10 @@ public class Character : MonoBehaviour {
 
         if (_input.Shoot) {
             Instantiate(_projectilePrefab, transform.position + transform.up, transform.rotation);
+
+//            var projectile = _spawner.Get(Prefabs.Projectile).Spawn();
+//            projectile.transform.position = transform.position + transform.up;
+//            projectile.transform.rotation = transform.rotation;
         }
     }
 

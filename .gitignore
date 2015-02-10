@@ -12,3 +12,6 @@ Assets/UnityVS/
 Assets/Textures/
 UnityVS.procedural_terrain.sln.ide/
 UnityVS.framework.v12.suo
+.vs/
+UnityVS.framework.sln.ide/
+Assets/Plugins/

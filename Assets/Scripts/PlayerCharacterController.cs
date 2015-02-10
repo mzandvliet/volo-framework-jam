@@ -1,7 +1,4 @@
 ﻿using UnityEngine;
-using System.Collections;
-
-/* Todo: Inject dependencies (character, camera, input) */
 
 public class PlayerCharacterController : MonoBehaviour {
     [SerializeField] private Character _character;
